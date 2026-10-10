@@ -33,6 +33,10 @@ spec:
         value: dev
       - name: commands          # JSON {install,build,test,deploy} overriding detection
         value: "{}"
+  # Argo's default (OnWorkflowSuccess) keeps the work PVC of every failed run: ~1.5-2.5 GB each
+  # (source + tool caches) filled the 60 GB kind disk. Reports are archived before the run ends.
+  volumeClaimGC:
+    strategy: OnWorkflowCompletion
   volumeClaimTemplates:
     - metadata:
         name: work
