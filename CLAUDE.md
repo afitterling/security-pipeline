@@ -30,7 +30,9 @@ IAM role (iam.tf). Scanners use `security-scan` → S3-only role. Keep that spli
   mounted into the deploy step. `mode` is a value on both charts; keep every AWS-only resource
   behind `{{ if eq .Values.mode "aws" }}`.
 - `scripts/` — `add-projects.sh`, `run-scans.sh`, `status.sh`, `dtrack-bootstrap.sh [--local] [--policies]`,
-  `release.sh`, `ui.sh`.
+  `release.sh`, `dtrack-tags.sh`, `ui.sh`. Ports/logins: `docs/access.md` (Argo CD 8443, Argo
+  Workflows 2746, Dependency-Track 8080 UI + 8081 API). D-Track projects are tagged public/private
+  from `visibility:` in `projects.yaml`.
 - Gate = trivy counts + gitleaks + Dependency-Track policy violations (`dtrack-policy` task, FAIL
   blocks unless approved in D-Track; starter set in `policies/dependency-track/policies.json`).
 - App Store releases (local mode): `appstore:` in `projects.yaml` → `release-candidate-<name>`

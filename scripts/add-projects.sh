@@ -5,6 +5,7 @@
 #   scripts/add-projects.sh --ref develop URL...        # scan a different branch
 # Names are derived from the URL (last path segment, lowercased, dashes). Schedules are
 # staggered 10 min apart starting 03:00 so scans don't all hit the cluster at once.
+# visibility (public|private, becomes a Dependency-Track tag) is looked up with `gh` for GitHub URLs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 command -v yq >/dev/null || { echo "yq is required (brew install yq)"; exit 1; }
@@ -31,9 +32,16 @@ for url in "${urls[@]}"; do
   minute=$(( (idx % 6) * 10 ))      # 6 slots per hour, 10 min apart
   hour=$(( (3 + idx / 6) % 24 ))
   schedule=$(printf '%d %d * * *' "$minute" "$hour")
+  vis=""
+  case "$url" in https://github.com/*/*)
+    slug=${url#https://github.com/}; slug=${slug%.git}
+    vis=$(gh api "repos/$slug" --jq 'if .private then "private" else "public" end' 2>/dev/null || true) ;;
+  esac
+  case "$vis" in public|private) ;; *) vis="" ;; esac   # gh prints the error body on 404
   NAME="$name" URL="$url" REF="$ref" SCHED="$schedule" \
     yq -i '.projects += [{"name": env(NAME), "repo": env(URL), "ref": env(REF), "schedule": env(SCHED)}]' projects.yaml
-  echo "added  $name  ($url @ $ref, cron '$schedule')"
+  [ -n "$vis" ] && N="$name" VIS="$vis" yq -i '(.projects[] | select(.name == strenv(N))).visibility = strenv(VIS)' projects.yaml
+  echo "added  $name  ($url @ $ref, cron '$schedule'${vis:+, $vis})"
   added=$((added + 1))
 done
 echo

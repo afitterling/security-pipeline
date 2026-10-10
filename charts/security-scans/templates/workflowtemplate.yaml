@@ -25,6 +25,8 @@ spec:
         value: block
       - name: appstore-enabled  # "true" → a gate-passed run becomes the App Store release candidate
         value: "false"
+      - name: tags              # comma-separated Dependency-Track project tags (visibility + tags:)
+        value: ""
       - name: deploy-enabled
         value: "true"
       - name: stage
@@ -275,8 +277,9 @@ spec:
         volumeMounts: [{ name: work, mountPath: /work }]
         resources: {{ toYaml .Values.resources.small | nindent 10 }}
 
-    # Wait for Dependency-Track to finish analysing the uploaded BOM, then collect policy violations
-    # and EPSS. Always exits 0; on error it writes {"error":...} and the gate decides (fails closed).
+    # Tag the Dependency-Track project (public/private + tags: from projects.yaml), wait for it to
+    # finish analysing the uploaded BOM, then collect policy violations and EPSS. Always exits 0; on
+    # error it writes {"error":...} and the gate decides (fails closed).
     - name: dtrack-policy
       container:
         image: {{ .Values.images.k8s }}   # curl + jq
@@ -287,7 +290,6 @@ spec:
             pol=$out/dtrack-policy.json
             api() { curl -sS --fail-with-body -H "X-Api-Key: $DTRACK_API_KEY" "$@"; }
             bail() { jq -n --arg e "$1" '{error:$e, fail:0, warn:0, info:0, approved:0, violations:[]}' > $pol; echo "dtrack-policy: $1"; exit 0; }
-            [ -n "$GATE_POLICY" ] && [ "$GATE_POLICY" != off ] || bail "policy gate off"
             token=$(jq -r '.token // empty' $out/dtrack-upload.json 2>/dev/null || true)
             [ -n "$token" ] || bail "no upload token"
             waited=0
@@ -299,6 +301,20 @@ spec:
             uuid=$(api -G "$DTRACK_URL/api/v1/project/lookup" --data-urlencode "name=$PROJECT" \
               --data-urlencode "version=$VERSION" | jq -r '.uuid // empty') || bail "project lookup failed"
             [ -n "$uuid" ] || bail "project $PROJECT/$VERSION not found"
+            # Tags: keep tags added in the UI, add ours; public/private are exclusive
+            if [ -n "$TAGS" ]; then
+              api "$DTRACK_URL/api/v1/project/$uuid" | jq -c --arg want "$TAGS" '
+                ($want | ascii_downcase | split(",") | map(select(. != ""))) as $w
+                | ([.tags[]?.name] as $have
+                   | ($have | map(select(. as $t | (["public","private"] | index($t)) == null or ($w | index($t)) != null)))
+                     + $w | unique) as $new
+                | if ($new | sort) == ([.tags[]?.name] | sort) then empty else {tags: ($new | map({name: .}))} end' > /tmp/tags.json || true
+              if [ -s /tmp/tags.json ]; then
+                api -X PATCH -H "Content-Type: application/json" -d @/tmp/tags.json "$DTRACK_URL/api/v1/project/$uuid" >/dev/null \
+                  && echo "tags: $(jq -r '[.tags[].name] | join(",")' /tmp/tags.json)" || echo "WARNING: could not set tags"
+              fi
+            fi
+            [ -n "$GATE_POLICY" ] && [ "$GATE_POLICY" != off ] || bail "policy gate off"
             page=1; : > /tmp/v.jsonl
             while :; do
               api "$DTRACK_URL/api/v1/violation/project/$uuid?suppressed=false&pageSize=500&pageNumber=$page" > /tmp/p.json \
@@ -333,6 +349,7 @@ spec:
           - { name: PROJECT, value: "{{ "{{" }}workflow.parameters.project{{ "}}" }}" }
           - { name: VERSION, value: "{{ "{{" }}workflow.parameters.version{{ "}}" }}" }
           - { name: GATE_POLICY, value: "{{ "{{" }}workflow.parameters.gate-policy{{ "}}" }}" }
+          - { name: TAGS, value: "{{ "{{" }}workflow.parameters.tags{{ "}}" }}" }
           - { name: TIMEOUT, value: {{ .Values.dependencyTrack.analysisTimeoutSeconds | quote }} }
         volumeMounts: [{ name: work, mountPath: /work }]
         resources: {{ toYaml .Values.resources.small | nindent 10 }}

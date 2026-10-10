@@ -39,6 +39,7 @@ spec:
         - { name: gate-high, value: {{ $p.gate.high | quote }} }
         - { name: gate-policy, value: {{ $p.gate.policy | quote }} }
         - { name: appstore-enabled, value: {{ $p.appstore.enabled | quote }} }
+        - { name: tags, value: {{ join "," $p.tags | quote }} }
         - { name: deploy-enabled, value: {{ $p.deploy.enabled | quote }} }
         - { name: stage, value: {{ $p.deploy.stage | quote }} }
         - { name: commands, value: {{ $p.commands | toJson | quote }} }

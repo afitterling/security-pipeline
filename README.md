@@ -49,6 +49,9 @@ projects.yaml ──git push──▶ Argo CD ──▶ one CronWorkflow per rep
 
 ## Running it locally (free)
 
+Ports and logins for Argo CD (8443), Argo Workflows (2746) and Dependency-Track (8080 UI / 8081 API):
+[docs/access.md](docs/access.md).
+
 The same Argo CD app-of-apps runs on a kind cluster on your Mac. MinIO replaces S3, plain
 Kubernetes secrets replace Secrets Manager, your `~/.aws` is mounted into the deploy step so
 `npx sst deploy` works with your normal profiles. Docker Desktop / OrbStack with about 6 CPU and

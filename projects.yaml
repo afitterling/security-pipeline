@@ -23,6 +23,8 @@
 #   semgrep   run semgrep (slower)                         default: true
 #   deploy    { enabled: bool, stage: <sst stage> }        default: enabled, stage dev
 #   commands  { install, build, test, deploy }  explicit commands, override detection
+#   visibility public | private (GitHub), set by add-projects.sh → Dependency-Track tag
+#   tags      [extra, dependency-track, tags]              default: none
 #   gate.policy  block | report | off: Dependency-Track policy violations in state FAIL block
 #             deploy and release unless approved/suppressed in D-Track   default: block
 #   appstore  { enabled, path, builds: [{ scheme, platform: ios|macos|catalyst }] }
@@ -53,12 +55,14 @@ projects:
     schedule: 20 3 * * *
     deploy:
       enabled: false
+    visibility: private
   - name: aws-remix
     repo: https://github.com/afitterling/aws-remix.git
     ref: dev
     schedule: 30 3 * * *
     deploy:
       enabled: false
+    visibility: private
   - name: do-not-forget-me
     repo: https://github.com/afitterling/do-not-forget-me.git
     ref: main
@@ -70,6 +74,7 @@ projects:
       path: swift/project.yml
       builds:
         - { scheme: DontForgetMe, platform: ios }
+    visibility: private
   - name: ejectify
     repo: https://github.com/afitterling/Ejectify.git
     ref: main
@@ -82,18 +87,21 @@ projects:
       builds:
         - { scheme: Ejectify, platform: macos }
         - { scheme: EjectifyMobile, platform: ios }
+    visibility: private
   - name: kidweatherapp
     repo: https://github.com/afitterling/kidweatherapp.git
     ref: main
     schedule: 0 4 * * *
     deploy:
       enabled: false
+    visibility: private
   - name: lucerna
     repo: https://github.com/afitterling/lucerna.git
     ref: main
     schedule: 10 4 * * *
     deploy:
       enabled: false
+    visibility: private
   - name: markdown
     repo: https://github.com/afitterling/markdown.git
     ref: main
@@ -105,12 +113,14 @@ projects:
       path: MarkdownDarkReader.xcodeproj
       builds:
         - { scheme: MarkdownDarkReader, platform: macos }
+    visibility: private
   - name: market-compass
     repo: https://github.com/afitterling/market-compass.git
     ref: main
     schedule: 30 4 * * *
     deploy:
       enabled: false
+    visibility: private
   - name: shopping-list
     repo: https://github.com/afitterling/shopping-list.git
     ref: main
@@ -123,78 +133,91 @@ projects:
       builds:
         - { scheme: ShoppingList, platform: ios }
         - { scheme: ShoppingList, platform: catalyst }
+    visibility: private
   - name: sp33c-tech-profile
     repo: https://github.com/afitterling/sp33c.tech-profile.git
     ref: main
     schedule: 50 4 * * *
     deploy:
       enabled: false
+    visibility: private
   - name: timewarp-timelogger
     repo: https://github.com/afitterling/timewarp-timelogger.git
     ref: main
     schedule: 0 5 * * *
     deploy:
       enabled: false
+    visibility: private
   - name: web-hook-push
     repo: https://github.com/afitterling/web-hook-push.git
     ref: main
     schedule: 10 5 * * *
     deploy:
       enabled: false
+    visibility: private
   - name: security-nfrs
     repo: https://github.com/afitterling/Security-NFRs.git
     ref: main
     schedule: 20 5 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: spec-live-monitor-ai-builder
     repo: https://github.com/afitterling/spec-live-monitor-ai-builder.git
     ref: main
     schedule: 30 5 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: imap-mcp
     repo: https://github.com/afitterling/imap-mcp.git
     ref: main
     schedule: 40 5 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: enclave-secure-env-key-value-store-aws-kms
     repo: https://github.com/afitterling/enclave-secure-env-key-value-store-aws-kms.git
     ref: main
     schedule: 50 5 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: tehher-terminal
     repo: https://github.com/afitterling/tehher-terminal.git
     ref: main
     schedule: 0 6 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: enclave-oss
     repo: https://github.com/afitterling/enclave-oss.git
     ref: main
     schedule: 10 6 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: claude-aws-sst-secure-default-rulebook
     repo: https://github.com/afitterling/claude-aws-sst-secure-default-rulebook.git
     ref: main
     schedule: 20 6 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: mastra-agentic-demo
     repo: https://github.com/afitterling/mastra-agentic-demo.git
     ref: main
     schedule: 30 6 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: claude-cockpit
     repo: https://github.com/afitterling/claude-cockpit.git
     ref: main
     schedule: 40 6 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: parla
     repo: https://github.com/afitterling/parla.git
     ref: main
@@ -206,249 +229,291 @@ projects:
       path: app/ios/Parla.xcworkspace
       builds:
         - { scheme: Parla, platform: ios }
+    visibility: public
   - name: claude-hook-popup
     repo: https://github.com/afitterling/claude-hook-popup.git
     ref: main
     schedule: 0 7 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: budget-cognito-dev
     repo: https://github.com/afitterling/budget-cognito-dev.git
     ref: main
     schedule: 10 7 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: nodge-spare
     repo: https://github.com/afitterling/nodge-spare.git
     ref: main
     schedule: 20 7 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: macos-sleepme-menuapp
     repo: https://github.com/afitterling/macOS-sleepme-menuapp.git
     ref: main
     schedule: 30 7 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: claude-todo-skill
     repo: https://github.com/afitterling/claude-todo-skill.git
     ref: main
     schedule: 40 7 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: jira-coding-agent
     repo: https://github.com/afitterling/jira-coding-agent.git
     ref: main
     schedule: 50 7 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: caffeine
     repo: https://github.com/afitterling/Caffeine.git
     ref: main
     schedule: 0 8 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: lm-code-builder
     repo: https://github.com/afitterling/lm-code-builder.git
     ref: main
     schedule: 10 8 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: market-control-plane
     repo: https://github.com/afitterling/market-control-plane.git
     ref: main
     schedule: 20 8 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: intelligent-video-analytics-software
     repo: https://github.com/afitterling/intelligent-video-analytics-software.git
     ref: main
     schedule: 30 8 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: deterministic-reasoning-infrastructure
     repo: https://github.com/afitterling/Deterministic-Reasoning-Infrastructure.git
     ref: main
     schedule: 40 8 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: recognitiontrainer
     repo: https://github.com/afitterling/RecognitionTrainer.git
     ref: main
     schedule: 50 8 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: accounting-api
     repo: https://github.com/afitterling/accounting-api.git
     ref: main
     schedule: 0 9 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: rc-sec
     repo: https://github.com/afitterling/rc.sec.git
     ref: main
     schedule: 10 9 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: argocd
     repo: https://github.com/afitterling/argocd.git
     ref: main
     schedule: 20 9 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: udacity
     repo: https://github.com/afitterling/udacity.git
     ref: main
     schedule: 30 9 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: secure-chat-frontend
     repo: https://github.com/afitterling/secure-chat-frontend.git
     ref: master
     schedule: 40 9 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: priorize-web-app
     repo: https://github.com/afitterling/priorize-web-app.git
     ref: master
     schedule: 50 9 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: gitops-api
     repo: https://github.com/afitterling/gitops-api.git
     ref: master
     schedule: 0 10 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: focus-2
     repo: https://github.com/afitterling/focus-2.git
     ref: master
     schedule: 10 10 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: elearning-sentence-builder
     repo: https://github.com/afitterling/elearning-sentence-builder.git
     ref: master
     schedule: 20 10 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: focus-app
     repo: https://github.com/afitterling/focus-app.git
     ref: master
     schedule: 30 10 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: docker-middleman
     repo: https://github.com/afitterling/docker-middleman.git
     ref: master
     schedule: 40 10 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: docker-image-python
     repo: https://github.com/afitterling/docker-image-python.git
     ref: master
     schedule: 50 10 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: docker-rvm
     repo: https://github.com/afitterling/docker-rvm.git
     ref: master
     schedule: 0 11 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: afitterling-github-io
     repo: https://github.com/afitterling/afitterling.github.io.git
     ref: master
     schedule: 10 11 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: cooperation-framework-org
     repo: https://github.com/afitterling/cooperation-framework.org.git
     ref: master
     schedule: 20 11 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: railsmailer
     repo: https://github.com/afitterling/railsmailer.git
     ref: master
     schedule: 30 11 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: iot-upstream
     repo: https://github.com/afitterling/iot-upstream.git
     ref: master
     schedule: 40 11 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: espruino-projects2
     repo: https://github.com/afitterling/espruino-projects2.git
     ref: master
     schedule: 50 11 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: espruino-old
     repo: https://github.com/afitterling/espruino-old.git
     ref: master
     schedule: 0 12 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: public-docs
     repo: https://github.com/afitterling/public_docs.git
     ref: master
     schedule: 10 12 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: mobile-template
     repo: https://github.com/afitterling/mobile-template.git
     ref: master
     schedule: 20 12 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: angular-mobile
     repo: https://github.com/afitterling/angular-mobile.git
     ref: master
     schedule: 30 12 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: rails4base
     repo: https://github.com/afitterling/rails4base.git
     ref: master
     schedule: 40 12 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: secure-chat
     repo: https://github.com/afitterling/secure-chat.git
     ref: develop
     schedule: 50 12 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: www-sp33c-de
     repo: https://github.com/afitterling/www.sp33c.de.git
     ref: develop
     schedule: 0 13 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: espruino-modules
     repo: https://github.com/afitterling/Espruino-Modules.git
     ref: develop
     schedule: 10 13 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: openvoc-frontend
     repo: https://github.com/afitterling/openvoc-frontend.git
     ref: develop
     schedule: 20 13 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: journal-frontend
     repo: https://github.com/afitterling/journal-frontend.git
     ref: develop
     schedule: 30 13 * * *
     deploy:
       enabled: false
+    visibility: public
   - name: webextract-frontend
     repo: https://github.com/afitterling/webextract-frontend.git
     ref: develop
     schedule: 40 13 * * *
     deploy:
       enabled: false
+    visibility: public
