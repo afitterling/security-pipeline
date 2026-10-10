@@ -22,7 +22,12 @@ spec:
           # Chart 0.x already sets ALPINE_METRICS_ENABLED and mounts /data; re-adding them here
           # makes the StatefulSet patch fail with "duplicate entries for key". Analyzers that need
           # API keys (OSS Index, Snyk) go in via ESO later.
-          extraEnv: []
+          # The image runs the JVM with MaxRAMPercentage=80: heap + metaspace + embedded H2 then
+          # exceed the container limit under load (OOMKilled during policy evaluation of big BOMs).
+          # EXTRA_JAVA_OPTIONS comes after JAVA_OPTIONS on the java command line, so this wins.
+          extraEnv:
+            - name: EXTRA_JAVA_OPTIONS
+              value: "-XX:MaxRAMPercentage={{ .Values.dependencyTrack.apiServer.maxRamPercentage }}"
         frontend:
           apiBaseUrl: {{ .Values.dependencyTrack.apiBaseUrl }}
           resources:
