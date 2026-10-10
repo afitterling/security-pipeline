@@ -14,7 +14,7 @@ SECRET=${SECRET:-security-pipeline/dependency-track}
 TEAM=${TEAM:-security-pipeline}
 API=http://localhost:18081
 
-kubectl -n dependency-track port-forward svc/dependency-track-api-server 18081:80 >/dev/null 2>&1 &
+kubectl -n dependency-track port-forward svc/dependency-track-api-server 18081:8080 >/dev/null 2>&1 &
 PF=$!; trap 'kill $PF 2>/dev/null' EXIT
 for i in $(seq 1 30); do curl -sf "$API/api/version" >/dev/null && break; sleep 1; done
 echo "Dependency-Track $(curl -s $API/api/version | jq -r .version)"
