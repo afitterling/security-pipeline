@@ -78,8 +78,8 @@ spec:
           - { name: PROJECT, value: "{{ "{{" }}workflow.parameters.project{{ "}}" }}" }
           - { name: COMMIT, value: "{{ "{{" }}inputs.parameters.commit{{ "}}" }}" }
           - { name: DRY_RUN, value: "{{ "{{" }}workflow.parameters.dry-run{{ "}}" }}" }
-          - { name: MAC_HOST, value: {{ .Values.appstore.macHost | quote }} }
-          - { name: MAC_USER, value: {{ .Values.appstore.macUser | quote }} }
+          - { name: MAC_HOST, value: {{ .Values.appstore.macHost | default "" | quote }} }
+          - { name: MAC_USER, value: {{ .Values.appstore.macUser | default "" | quote }} }
         volumeMounts:
           - { name: ssh, mountPath: /ssh, readOnly: true }
         resources: {{ toYaml .Values.resources.small | nindent 10 }}

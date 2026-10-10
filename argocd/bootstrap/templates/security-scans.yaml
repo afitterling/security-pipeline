@@ -20,8 +20,8 @@ spec:
             url: http://dependency-track-api-server.{{ .Values.dependencyTrack.namespace }}.svc.cluster.local:8080
           {{- if eq .Values.mode "local" }}
           appstore:
-            macHost: {{ .Values.local.mac.host | quote }}
-            macUser: {{ .Values.local.mac.user | quote }}
+            macHost: {{ .Values.local.mac.host | default "192.168.127.254" | quote }}
+            macUser: {{ .Values.local.mac.user | default "" | quote }}
           {{- end }}
     - repoURL: {{ .Values.repoURL }}
       targetRevision: {{ .Values.targetRevision }}
