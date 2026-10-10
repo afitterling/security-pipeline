@@ -1,14 +1,22 @@
 # Ports and access (local mode)
 
-Nothing in the cluster is exposed publicly. Every UI is reached through a `kubectl port-forward`
-started by `scripts/ui.sh` (or the `make ui-*` targets). A forward stops when its pod restarts
-(e.g. Dependency-Track after an OOM kill or an upgrade): just start it again.
+Nothing in the cluster is exposed publicly. Every UI is reached through a `kubectl port-forward`.
+
+```bash
+scripts/start.sh          # or: make start — VM + kind node up, wait for pods, all forwards in the background
+scripts/start.sh status   # VM / node / API server state and which URL answers
+scripts/start.sh stop     # or: make stop — stop the forwards (cluster keeps running)
+```
+
+`start.sh` keeps each forward in a restart loop, so the UIs come back by themselves after a pod
+restart (logs: `~/Library/Logs/security-pipeline/forward-*.log`). `make ui-argocd|ui-argo|ui-dtrack`
+still start a single forward in the foreground; those stop when their pod restarts.
 
 | What | URL on your Mac | Start with | Login | In-cluster service |
 |---|---|---|---|---|
-| **Argo CD** (GitOps: syncs this repo) | http://localhost:8443 | `make ui-argocd` | `admin` / `make argocd-password` | `argocd-server.argocd:80` |
-| **Argo Workflows** (scan runs, logs, history) | http://localhost:2746 | `make ui-argo` | none (server auth mode) | `argo-workflows-server.argo:2746` |
-| **Dependency-Track UI** | http://localhost:8080 | `make ui-dtrack` | `admin` / the password you set | `dependency-track-frontend.dependency-track:8080` |
+| **Argo CD** (GitOps: syncs this repo) | http://localhost:8443 | `make start` or `make ui-argocd` | `admin` / `make argocd-password` | `argocd-server.argocd:80` |
+| **Argo Workflows** (scan runs, logs, history) | http://localhost:2746 | `make start` or `make ui-argo` | none (server auth mode) | `argo-workflows-server.argo:2746` |
+| **Dependency-Track UI** | http://localhost:8080 | `make start` or `make ui-dtrack` | `admin` / the password you set | `dependency-track-frontend.dependency-track:8080` |
 | **Dependency-Track API** | http://localhost:8081 | same as the UI (one command starts both) | API key (`security/dtrack-api`) | `dependency-track-api-server.dependency-track:8080` |
 | RustFS console (reports bucket) | http://localhost:9001 | `kubectl -n minio port-forward svc/rustfs-console 9001:9001` | `pipeline` / secret `minio/minio-credentials` | `rustfs.minio:9000` (S3 API) |
 

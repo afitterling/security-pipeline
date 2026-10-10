@@ -50,7 +50,7 @@ projects.yaml ──git push──▶ Argo CD ──▶ one CronWorkflow per rep
 ## Running it locally (free)
 
 Ports and logins for Argo CD (8443), Argo Workflows (2746) and Dependency-Track (8080 UI / 8081 API):
-[docs/access.md](docs/access.md).
+[docs/access.md](docs/access.md). After a reboot or when a UI is unreachable: `make start`.
 
 The same Argo CD app-of-apps runs on a kind cluster on your Mac. MinIO replaces S3, plain
 Kubernetes secrets replace Secrets Manager, your `~/.aws` is mounted into the deploy step so
