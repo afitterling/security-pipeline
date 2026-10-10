@@ -93,14 +93,14 @@ helm upgrade --install argocd argo/argo-cd -n argocd --wait --timeout 10m \
   --set server.resources.requests.memory=128Mi >/dev/null
 echo "argo cd installed"
 
-# ---- root app (mode=local → MinIO, no IRSA, no External Secrets)
+# ---- root app (mode=local → RustFS object store, no IRSA, no External Secrets)
 helm upgrade --install security-pipeline-root argocd/bootstrap -n argocd \
   --set mode=local --set repoURL="$REPO_URL" --set targetRevision="$REPO_REV" >/dev/null
 echo "root application installed (repo $REPO_URL @ $REPO_REV)"
 
 cat <<EOF
 
-Argo CD is syncing: minio, gatekeeper, argo-workflows, dependency-track, trivy-operator,
+Argo CD is syncing: gatekeeper, argo-workflows, dependency-track, trivy-operator,
 gatekeeper-policies, security-scans. First sync pulls ~2 GB of images; give it 5-10 minutes.
 
   kubectl -n argocd get applications -w

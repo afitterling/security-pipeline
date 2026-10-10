@@ -20,13 +20,16 @@ spec:
             useSDKCreds: true   # IRSA on the workflow / controller service accounts
             {{- else }}
             bucket: {{ .Values.local.minio.bucket }}
-            endpoint: minio.{{ .Values.local.minio.namespace }}.svc.cluster.local:9000
+            endpoint: rustfs.{{ .Values.local.minio.namespace }}.svc.cluster.local:9000
             insecure: true
+            createBucketIfNotPresent: { objectLocking: false }   # no mc job any more; Argo creates it on first upload
             accessKeySecret: { name: {{ .Values.local.minio.secret }}, key: rootUser }
             secretKeySecret: { name: {{ .Values.local.minio.secret }}, key: rootPassword }
             {{- end }}
             keyFormat: "{{ "{{" }}workflow.namespace{{ "}}" }}/{{ "{{" }}workflow.parameters.project{{ "}}" }}/{{ "{{" }}workflow.creationTimestamp.Y{{ "}}" }}-{{ "{{" }}workflow.creationTimestamp.m{{ "}}" }}-{{ "{{" }}workflow.creationTimestamp.d{{ "}}" }}/{{ "{{" }}workflow.name{{ "}}" }}/{{ "{{" }}pod.name{{ "}}" }}"
         controller:
+          # Max workflows running at once; the rest queue as Pending. Keeps a laptop cluster alive.
+          parallelism: {{ if eq .Values.mode "local" }}{{ .Values.argoWorkflows.parallelismLocal }}{{ else }}{{ .Values.argoWorkflows.parallelism }}{{ end }}
           workflowNamespaces:
             - {{ .Values.argoWorkflows.workflowNamespace }}
           serviceAccount:

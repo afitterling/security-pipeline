@@ -50,7 +50,7 @@ Kubernetes secrets replace Secrets Manager, your `~/.aws` is mounted into the de
 12 GB RAM; Dependency-Track alone wants ~2 GB.
 
 ```bash
-brew install docker kind kubectl helm argo yq jq     # once
+brew install docker kind kubectl helm yq jq     # once (no argo CLI needed: scripts use the one in the Argo server pod)
 git remote add origin https://github.com/<you>/security-pipeline.git && git push -u origin main
 GIT_TOKEN=<read-only PAT> make local-up             # ~10 min, pulls ~2 GB of images
 make ui-dtrack &                                     # http://localhost:8080
@@ -68,8 +68,8 @@ Argo CD still needs the repo on GitHub (free, private is fine), because it pulls
 
 ## Prerequisites (AWS/EKS variant)
 
-`terraform ≥ 1.6`, `aws` CLI with access to account 327261196437, `kubectl`, `helm`, `argo`
-(`brew install helm kubectl argo yq jq`). This repo must be pushed to a git remote Argo CD can
+`terraform ≥ 1.6`, `aws` CLI with access to account 327261196437, `kubectl`, `helm`
+(`brew install helm kubectl yq jq`). This repo must be pushed to a git remote Argo CD can
 read (GitHub, HTTPS). For a private repo create a read-only token.
 
 ## First deployment (one-time, ~25 min)

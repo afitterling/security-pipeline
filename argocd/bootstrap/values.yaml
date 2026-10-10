@@ -3,12 +3,15 @@ repoURL: https://github.com/example/security-pipeline.git
 targetRevision: main
 
 # aws   = EKS: IRSA, S3 reports bucket, External Secrets ← Secrets Manager
-# local = kind/k3s: no IAM, MinIO reports bucket, plain Kubernetes secrets (local/up.sh)
+# local = kind/k3s: no IAM, RustFS (S3-compatible) reports bucket, plain Kubernetes secrets (local/up.sh)
 mode: aws
 
 local:
+  # In-cluster S3 store (templates/object-store.yaml). RustFS replaced the MinIO chart: MinIO's
+  # public images were pulled from quay.io/Docker Hub in 2025. Key name kept to avoid churn.
   minio:
     namespace: minio
+    image: docker.io/rustfs/rustfs:1.0.1
     bucket: reports
     storage: 20Gi
     secret: minio-credentials   # keys rootUser/rootPassword, created by local/up.sh in minio, argo, security
@@ -50,3 +53,5 @@ dependencyTrack:
 argoWorkflows:
   namespace: argo
   workflowNamespace: security
+  parallelism: 6        # concurrent scan workflows on EKS
+  parallelismLocal: 1   # on kind/podman (8 GiB): one scan at a time

@@ -1,0 +1,135 @@
+{{- /*
+Local-mode S3 store for scan reports and Argo artifacts. RustFS (S3/MinIO-compatible, Apache-2.0)
+replaced the MinIO chart in 2026-10: MinIO's public images were removed from quay.io/Docker Hub,
+so the chart's pinned tag no longer pulls. Values keys stay under `local.minio` and the secret is
+still `minio-credentials` (rootUser/rootPassword, created by local/up.sh) to avoid churn.
+*/ -}}
+{{- if eq .Values.mode "local" }}
+{{- $ns := .Values.local.minio.namespace }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rustfs-data
+  namespace: {{ $ns }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.local.minio.storage }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustfs
+  namespace: {{ $ns }}
+  labels: { app: rustfs }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: rustfs }
+  template:
+    metadata:
+      labels: { app: rustfs }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: rustfs
+          image: {{ .Values.local.minio.image }}
+          env:
+            - name: RUSTFS_VOLUMES
+              value: /data
+            - name: RUSTFS_ADDRESS
+              value: 0.0.0.0:9000
+            - name: RUSTFS_CONSOLE_ENABLE
+              value: "true"
+            - name: RUSTFS_CONSOLE_ADDRESS
+              value: 0.0.0.0:9001
+            - name: RUSTFS_OBS_LOG_DIRECTORY
+              value: /logs
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.local.minio.secret }}, key: rootUser } }
+            - name: RUSTFS_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.local.minio.secret }}, key: rootPassword } }
+          ports:
+            - { name: s3, containerPort: 9000 }
+            - { name: console, containerPort: 9001 }
+          readinessProbe:
+            tcpSocket: { port: s3 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: logs, mountPath: /logs }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: rustfs-data }
+        - name: logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+  namespace: {{ $ns }}
+spec:
+  selector: { app: rustfs }
+  ports:
+    - { name: s3, port: 9000, targetPort: s3 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs-console
+  namespace: {{ $ns }}
+spec:
+  selector: { app: rustfs }
+  ports:
+    - { name: console, port: 9001, targetPort: console }
+{{- end }}
+{{- if eq .Values.mode "local" }}
+---
+# Create the reports bucket (idempotent; S3 PUT bucket returns 200 or BucketAlreadyOwnedByYou).
+# Re-run on every helm upgrade; the Argo chart does not pass createBucketIfNotPresent through.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rustfs-create-bucket
+  namespace: {{ .Values.local.minio.namespace }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: mb
+          image: docker.io/curlimages/curl:8.14.1
+          command: [sh, -ec]
+          args:
+            - |
+              url=http://rustfs.{{ .Values.local.minio.namespace }}.svc.cluster.local:9000/{{ .Values.local.minio.bucket }}
+              for i in $(seq 1 30); do curl -sf -o /dev/null "$url/?location=" --aws-sigv4 aws:amz:us-east-1:s3 --user "$KEY:$SECRET" && { echo "bucket exists"; exit 0; }
+                code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$url" --aws-sigv4 aws:amz:us-east-1:s3 --user "$KEY:$SECRET" || true)
+                case "$code" in 200|409) echo "bucket ready ($code)"; exit 0 ;; esac
+                echo "attempt $i: $code"; sleep 5; done; exit 1
+          env:
+            - { name: KEY, valueFrom: { secretKeyRef: { name: {{ .Values.local.minio.secret }}, key: rootUser } } }
+            - { name: SECRET, valueFrom: { secretKeyRef: { name: {{ .Values.local.minio.secret }}, key: rootPassword } } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 64Mi } }
+{{- end }}
