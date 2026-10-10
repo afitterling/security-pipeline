@@ -66,7 +66,7 @@ DTRACK_ADMIN_PASSWORD='<new pw>' scripts/dtrack-bootstrap.sh --local
 scripts/add-projects.sh https://github.com/<you>/some-sst-app.git
 git commit -am "add repos" && git push              # Argo CD syncs in ~3 min
 scripts/run-scans.sh --all                           # or wait for the nightly cron
-make ui-argo                                         # http://localhost:2746 run history
+make ui-argo                                         # http://localhost:2746/workflows/security run history
 make local-down                                      # delete everything
 ```
 
@@ -135,7 +135,7 @@ scripts/run-scans.sh --all            # everything, rolling: one scan at a time,
 scripts/run-scans.sh fin-wise         # one (or several names, run in that order)
 scripts/run-scans.sh --all --resume   # same, but skip projects that already have a successful run
 scripts/run-scans.sh --all --parallel # submit all at once and return (the controller queues them)
-make ui-argo                          # http://localhost:2746 — DAG, logs, history
+make ui-argo                          # http://localhost:2746/workflows/security — DAG, logs, history
 scripts/status.sh                     # apps, schedules, last runs, Dependency-Track portfolio
 ```
 

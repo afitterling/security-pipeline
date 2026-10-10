@@ -5,7 +5,7 @@
 #   scripts/start.sh stop     # stop the port-forwards (cluster keeps running)
 # Port-forwards run in a restart loop, so they come back by themselves when a pod restarts.
 #   Argo CD             http://localhost:8443   admin / make argocd-password
-#   Argo Workflows      http://localhost:2746
+#   Argo Workflows      http://localhost:2746/workflows/security   (scans are in namespace security)
 #   Dependency-Track    http://localhost:8080   (API http://localhost:8081)
 # Logs: ~/Library/Logs/security-pipeline/forward-*.log. Details: docs/access.md
 set -euo pipefail
@@ -38,7 +38,7 @@ status() {
   echo "API server: $(kubectl get --request-timeout=10s --raw /readyz 2>/dev/null || echo 'not ready')"
   echo
   printf '%-16s %-28s %s\n' UI URL ANSWER
-  for u in "Argo CD|http://localhost:8443" "Argo Workflows|http://localhost:2746" \
+  for u in "Argo CD|http://localhost:8443" "Argo Workflows|http://localhost:2746/workflows/security" \
            "D-Track UI|http://localhost:8080" "D-Track API|http://localhost:8081/api/version"; do
     code=$(curl -s -m3 -o /dev/null -w '%{http_code}' "${u#*|}" || true)
     printf '%-16s %-28s %s\n' "${u%%|*}" "${u#*|}" "$([ "$code" = 000 ] && echo down || echo "$code")"

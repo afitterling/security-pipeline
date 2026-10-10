@@ -15,12 +15,16 @@ still start a single forward in the foreground; those stop when their pod restar
 | What | URL on your Mac | Start with | Login | In-cluster service |
 |---|---|---|---|---|
 | **Argo CD** (GitOps: syncs this repo) | http://localhost:8443 | `make start` or `make ui-argocd` | `admin` / `make argocd-password` | `argocd-server.argocd:80` |
-| **Argo Workflows** (scan runs, logs, history) | http://localhost:2746 | `make start` or `make ui-argo` | none (server auth mode) | `argo-workflows-server.argo:2746` |
+| **Argo Workflows** (scan runs, logs, history) | http://localhost:2746/workflows/security | `make start` or `make ui-argo` | none (server auth mode) | `argo-workflows-server.argo:2746` |
 | **Dependency-Track UI** | http://localhost:8080 | `make start` or `make ui-dtrack` | `admin` / the password you set | `dependency-track-frontend.dependency-track:8080` |
 | **Dependency-Track API** | http://localhost:8081 | same as the UI (one command starts both) | API key (`security/dtrack-api`) | `dependency-track-api-server.dependency-track:8080` |
 | RustFS console (reports bucket) | http://localhost:9001 | `kubectl -n minio port-forward svc/rustfs-console 9001:9001` | `pipeline` / secret `minio/minio-credentials` | `rustfs.minio:9000` (S3 API) |
 
 Notes
+- Argo Workflows: the scans live in namespace **`security`**. The UI opens on another namespace and
+  then looks empty; use http://localhost:2746/workflows/security (cron schedules:
+  http://localhost:2746/cron-workflows/security, templates: http://localhost:2746/workflow-templates/security)
+  or set the namespace filter to `security`.
 - Argo CD listens on plain HTTP behind the forward (`server.insecure=true`), despite the port number 8443.
 - The Dependency-Track UI calls the API from your browser at http://localhost:8081, so the API forward
   must be running too; `make ui-dtrack` starts both.

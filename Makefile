@@ -42,7 +42,7 @@ argocd-password: ## print the initial Argo CD admin password
 ui-argocd: ## port-forward Argo CD -> http://localhost:8443
 	scripts/ui.sh argocd
 
-ui-argo: ## port-forward Argo Workflows -> http://localhost:2746
+ui-argo: ## port-forward Argo Workflows -> http://localhost:2746/workflows/security
 	scripts/ui.sh argo
 
 ui-dtrack: ## port-forward Dependency-Track -> http://localhost:8080 (API :8081)

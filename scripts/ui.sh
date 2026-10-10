@@ -6,7 +6,7 @@ case "${1:-}" in
     echo "Argo CD      -> http://localhost:8443   (user admin, password: make argocd-password)"
     exec kubectl -n argocd port-forward svc/argocd-server 8443:80 ;;
   argo)
-    echo "Argo Workflows -> http://localhost:2746"
+    echo "Argo Workflows -> http://localhost:2746/workflows/security   (scans are in namespace security)"
     exec kubectl -n argo port-forward svc/argo-workflows-server 2746:2746 ;;
   dtrack)
     echo "Dependency-Track UI -> http://localhost:8080   API -> http://localhost:8081"
