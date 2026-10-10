@@ -21,6 +21,10 @@ spec:
         value: "0"
       - name: gate-high
         value: "10"
+      - name: gate-policy       # block | report | off  (Dependency-Track policy violations)
+        value: block
+      - name: appstore-enabled  # "true" → a gate-passed run becomes the App Store release candidate
+        value: "false"
       - name: deploy-enabled
         value: "true"
       - name: stage
@@ -48,11 +52,11 @@ spec:
     fsGroup: 1000
   templates:
     # ---------------------------------------------------------------- DAG
-    #   clone ─┬─ detect ── build-test ─┐
-    #          ├─ sbom ── upload-bom ───┤
-    #          ├─ trivy ────────────────┼─ gate ── deploy ── archive
-    #          ├─ gitleaks ─────────────┤
-    #          └─ semgrep (optional) ───┘
+    #   clone ─┬─ detect ── build-test ──────────────┐
+    #          ├─ sbom ── upload-bom ── dtrack-policy ┤                ┌─ deploy ──────────┐
+    #          ├─ trivy ──────────────────────────────┼─ gate ─────────┤                   ├─ archive ── verdict
+    #          ├─ gitleaks ───────────────────────────┤                └─ release-candidate┘
+    #          └─ semgrep (optional) ─────────────────┘
     - name: pipeline
       dag:
         tasks:
@@ -80,16 +84,23 @@ spec:
           - name: upload-bom
             template: upload-bom
             depends: sbom
+          - name: dtrack-policy
+            template: dtrack-policy
+            depends: upload-bom
           - name: gate
             template: gate
-            depends: "trivy && gitleaks && upload-bom && build-test && (semgrep.Succeeded || semgrep.Skipped || semgrep.Failed)"
+            depends: "trivy && gitleaks && dtrack-policy && build-test && (semgrep.Succeeded || semgrep.Skipped || semgrep.Failed)"
+          - name: release-candidate
+            template: release-candidate
+            depends: "gate.Succeeded"
+            when: "{{ "{{" }}workflow.parameters.appstore-enabled{{ "}}" }} == true"
           - name: deploy
             template: deploy
             depends: "gate.Succeeded"
             when: "{{ "{{" }}tasks.detect.outputs.parameters.deploy-enabled{{ "}}" }} == true"
           - name: archive
             template: archive
-            depends: "deploy.Succeeded || deploy.Failed || deploy.Skipped || deploy.Omitted || gate.Failed"
+            depends: "(deploy.Succeeded || deploy.Failed || deploy.Skipped || deploy.Omitted) && (release-candidate.Succeeded || release-candidate.Failed || release-candidate.Skipped || release-candidate.Omitted) || gate.Failed"
           # Referencing gate.Failed above makes Argo treat a gate failure as "expected", so the
           # workflow would end Succeeded. This last task turns a failed gate into a failed workflow.
           - name: verdict
@@ -206,6 +217,11 @@ spec:
             value: /work/.trivy
         volumeMounts: [{ name: work, mountPath: /work }]
         resources: {{ toYaml .Values.resources.scanner | nindent 10 }}
+      # The 120 MB vulnerability DB download from mirror.gcr.io breaks off now and then
+      retryStrategy:
+        limit: "2"
+        retryPolicy: Always
+        backoff: { duration: "30s", factor: "2" }
 
     - name: gitleaks
       container:
@@ -259,6 +275,69 @@ spec:
         volumeMounts: [{ name: work, mountPath: /work }]
         resources: {{ toYaml .Values.resources.small | nindent 10 }}
 
+    # Wait for Dependency-Track to finish analysing the uploaded BOM, then collect policy violations
+    # and EPSS. Always exits 0; on error it writes {"error":...} and the gate decides (fails closed).
+    - name: dtrack-policy
+      container:
+        image: {{ .Values.images.k8s }}   # curl + jq
+        command: [sh, -ec]
+        args:
+          - |
+            out=/work/out
+            pol=$out/dtrack-policy.json
+            api() { curl -sS --fail-with-body -H "X-Api-Key: $DTRACK_API_KEY" "$@"; }
+            bail() { jq -n --arg e "$1" '{error:$e, fail:0, warn:0, info:0, approved:0, violations:[]}' > $pol; echo "dtrack-policy: $1"; exit 0; }
+            [ -n "$GATE_POLICY" ] && [ "$GATE_POLICY" != off ] || bail "policy gate off"
+            token=$(jq -r '.token // empty' $out/dtrack-upload.json 2>/dev/null || true)
+            [ -n "$token" ] || bail "no upload token"
+            waited=0
+            while [ "$(api "$DTRACK_URL/api/v1/event/token/$token" | jq -r .processing)" != false ]; do
+              [ $waited -ge "$TIMEOUT" ] && bail "BOM analysis not finished after ${TIMEOUT}s"
+              sleep 5; waited=$((waited + 5))
+            done
+            echo "BOM analysed after ${waited}s"
+            uuid=$(api -G "$DTRACK_URL/api/v1/project/lookup" --data-urlencode "name=$PROJECT" \
+              --data-urlencode "version=$VERSION" | jq -r '.uuid // empty') || bail "project lookup failed"
+            [ -n "$uuid" ] || bail "project $PROJECT/$VERSION not found"
+            page=1; : > /tmp/v.jsonl
+            while :; do
+              api "$DTRACK_URL/api/v1/violation/project/$uuid?suppressed=false&pageSize=500&pageNumber=$page" > /tmp/p.json \
+                || bail "violation query failed (API key needs VIEW_POLICY_VIOLATION: rerun scripts/dtrack-bootstrap.sh)"
+              jq -c '.[]' /tmp/p.json >> /tmp/v.jsonl
+              [ "$(jq length /tmp/p.json)" -lt 500 ] && break; page=$((page + 1))
+            done
+            jq -s '
+              def open: (.analysis.analysisState // "NOT_SET") != "APPROVED";
+              def count($s): [.[] | select(.policyCondition.policy.violationState == $s and open)] | length;
+              { fail: count("FAIL"), warn: count("WARN"), info: count("INFO"),
+                approved: [.[] | select(open | not)] | length,
+                violations: [.[] | { component: "\(.component.name)@\(.component.version // "")",
+                                     policy: .policyCondition.policy.name,
+                                     state: .policyCondition.policy.violationState, type,
+                                     analysis: (.analysis.analysisState // "NOT_SET") }] }' /tmp/v.jsonl > $pol
+            jq -c '{fail, warn, info, approved}' $pol
+            jq -r '.violations[] | select(.state == "FAIL" and .analysis != "APPROVED") | "  FAIL \(.policy): \(.component)"' $pol | head -30
+            # EPSS: probability of exploitation in the next 30 days (FIRST.org), per finding
+            api "$DTRACK_URL/api/v1/finding/project/$uuid?suppressed=false" | jq '
+              { max: ([.[].vulnerability.epssScore // 0] | max // 0),
+                high: [.[] | select((.vulnerability.epssScore // 0) >= 0.1)] | length,
+                top: (sort_by(-(.vulnerability.epssScore // 0)) | .[:20] | map({
+                  vuln: .vulnerability.vulnId, component: "\(.component.name)@\(.component.version // "")",
+                  severity: .vulnerability.severity, epss: .vulnerability.epssScore,
+                  percentile: .vulnerability.epssPercentile })) }' > $out/epss.json || echo '{"max":0,"high":0,"top":[]}' > $out/epss.json
+            jq -r '"EPSS max \(.max)  findings with EPSS >= 0.1: \(.high)"' $out/epss.json
+        env:
+          - { name: DTRACK_URL, value: {{ .Values.dependencyTrack.url | quote }} }
+          - name: DTRACK_API_KEY
+            valueFrom: { secretKeyRef: { name: dtrack-api, key: apiKey, optional: true } }
+          - { name: PROJECT, value: "{{ "{{" }}workflow.parameters.project{{ "}}" }}" }
+          - { name: VERSION, value: "{{ "{{" }}workflow.parameters.version{{ "}}" }}" }
+          - { name: GATE_POLICY, value: "{{ "{{" }}workflow.parameters.gate-policy{{ "}}" }}" }
+          - { name: TIMEOUT, value: {{ .Values.dependencyTrack.analysisTimeoutSeconds | quote }} }
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+      activeDeadlineSeconds: 1200
+
     # ---------------------------------------------------------------- gate
     - name: gate
       container:
@@ -271,17 +350,31 @@ spec:
             secrets=$(jq '[.Results[]?.Secrets[]?] | length' /work/out/trivy.json)
             leaks=$(jq 'length' /work/out/gitleaks.json 2>/dev/null || echo 0)
             sg=$(jq '.results | length' /work/out/semgrep.json 2>/dev/null || echo 0)
+            pol=/work/out/dtrack-policy.json
+            pfail=$(jq '.fail // 0' $pol 2>/dev/null || echo 0)
+            pwarn=$(jq '.warn // 0' $pol 2>/dev/null || echo 0)
+            perr=$(jq -r '.error // empty' $pol 2>/dev/null || echo "no dtrack-policy.json")
+            emax=$(jq '.max // 0' /work/out/epss.json 2>/dev/null || echo 0)
+            ehigh=$(jq '.high // 0' /work/out/epss.json 2>/dev/null || echo 0)
+            gpol="{{ "{{" }}workflow.parameters.gate-policy{{ "}}" }}"
             jq -n --arg project "{{ "{{" }}workflow.parameters.project{{ "}}" }}" \
                   --arg commit "$(cat /work/out/commit.txt)" \
                   --arg kind "$(jq -r .kind /work/out/plan.json)" \
                   --argjson critical "$crit" --argjson high "$high" \
                   --argjson trivySecrets "$secrets" --argjson gitleaks "$leaks" --argjson semgrep "$sg" \
-                  '{project:$project, commit:$commit, kind:$kind, critical:$critical, high:$high, trivySecrets:$trivySecrets, gitleaks:$gitleaks, semgrep:$semgrep}' \
+                  --argjson policyFail "$pfail" --argjson policyWarn "$pwarn" --arg policyError "$perr" --arg policyGate "$gpol" \
+                  --argjson epssMax "$emax" --argjson epssHigh "$ehigh" \
+                  '{project:$project, commit:$commit, kind:$kind, critical:$critical, high:$high, trivySecrets:$trivySecrets, gitleaks:$gitleaks, semgrep:$semgrep,
+                    policyGate:$policyGate, policyFail:$policyFail, policyWarn:$policyWarn, policyError:$policyError, epssMax:$epssMax, epssHigh:$epssHigh}' \
                   | tee /work/out/summary.json
             fail=0
             [ "$crit" -gt "{{ "{{" }}workflow.parameters.gate-critical{{ "}}" }}" ] && { echo "GATE: critical $crit > {{ "{{" }}workflow.parameters.gate-critical{{ "}}" }}"; fail=1; }
             [ "$high" -gt "{{ "{{" }}workflow.parameters.gate-high{{ "}}" }}" ] && { echo "GATE: high $high > {{ "{{" }}workflow.parameters.gate-high{{ "}}" }}"; fail=1; }
             [ "$leaks" -gt 0 ] && { echo "GATE: $leaks leaked secrets (gitleaks)"; fail=1; }
+            if [ "$gpol" = block ]; then
+              [ -n "$perr" ] && { echo "GATE: Dependency-Track policy check failed closed: $perr"; fail=1; }
+              [ "$pfail" -gt 0 ] && { echo "GATE: $pfail Dependency-Track policy violations in state FAIL (approve or fix them)"; fail=1; }
+            fi
             [ "$fail" = 0 ] && echo "GATE: passed — deploy allowed"
             exit $fail
         volumeMounts: [{ name: work, mountPath: /work }]
@@ -340,6 +433,32 @@ spec:
             optional: true
       {{- end }}
       activeDeadlineSeconds: 3600
+
+    # ---------------------------------------------------------------- release candidate
+    # Gate passed and the project ships to the App Store: remember this commit. The release itself is
+    # a separate, manually started workflow (appstore-release) so a pending approval never blocks the
+    # one-at-a-time scan queue. Own SA: the scanner SA (which runs repo code) cannot write candidates.
+    - name: release-candidate
+      serviceAccountName: {{ .Values.serviceAccount.release }}
+      container:
+        image: {{ .Values.images.k8s }}
+        command: [sh, -ec]
+        args:
+          - |
+            kubectl create configmap "release-candidate-$PROJECT" --dry-run=client -o yaml \
+              --from-literal=project="$PROJECT" --from-literal=ref="$REF" \
+              --from-literal=commit="$(cat /work/out/commit.txt)" \
+              --from-literal=workflow="$WORKFLOW" --from-literal=time="$(date +%s)" \
+              --from-file=summary.json=/work/out/summary.json \
+              | kubectl label --local -f - -o yaml app.kubernetes.io/part-of=security-pipeline security-pipeline/release-candidate=true \
+              | kubectl apply -f -
+            echo "release candidate: $PROJECT @ $(cat /work/out/commit.txt) — start it with scripts/release.sh $PROJECT"
+        env:
+          - { name: PROJECT, value: "{{ "{{" }}workflow.parameters.project{{ "}}" }}" }
+          - { name: REF, value: "{{ "{{" }}workflow.parameters.ref{{ "}}" }}" }
+          - { name: WORKFLOW, value: "{{ "{{" }}workflow.name{{ "}}" }}" }
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
 
     # ---------------------------------------------------------------- archive → S3
     - name: verdict

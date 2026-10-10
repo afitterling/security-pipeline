@@ -1,0 +1,48 @@
+{
+  "_comment": "Starter Dependency-Track policies, created by scripts/dtrack-bootstrap.sh --policies. Existing policies with the same name are left alone, so edit them in the UI (Policy Management) afterwards. FAIL blocks the pipeline gate (gate.policy: block) unless the violation is approved or suppressed; WARN and INFO are only reported.",
+  "policies": [
+    {
+      "name": "Strong copyleft license",
+      "operator": "ANY",
+      "violationState": "FAIL",
+      "conditions": [
+        { "subject": "LICENSE_GROUP", "operator": "IS", "value": "Copyleft" }
+      ]
+    },
+    {
+      "name": "Critical vulnerability",
+      "operator": "ANY",
+      "violationState": "FAIL",
+      "conditions": [
+        { "subject": "SEVERITY", "operator": "IS", "value": "CRITICAL" }
+      ]
+    },
+    {
+      "name": "Likely exploited (EPSS >= 0.3)",
+      "operator": "ANY",
+      "violationState": "WARN",
+      "conditions": [
+        { "subject": "EPSS", "operator": "NUMERIC_GREATER_THAN_OR_EQUAL", "value": "0.3" }
+      ]
+    },
+    {
+      "name": "Banned packages",
+      "operator": "ANY",
+      "violationState": "FAIL",
+      "conditions": [
+        { "subject": "COORDINATES", "operator": "MATCHES", "value": "{\"group\":\"*\",\"name\":\"event-stream\",\"version\":\"*\"}" },
+        { "subject": "COORDINATES", "operator": "MATCHES", "value": "{\"group\":\"*\",\"name\":\"flatmap-stream\",\"version\":\"*\"}" },
+        { "subject": "COORDINATES", "operator": "MATCHES", "value": "{\"group\":\"*\",\"name\":\"ua-parser-js\",\"version\":\"0.7.29\"}" },
+        { "subject": "COORDINATES", "operator": "MATCHES", "value": "{\"group\":\"*\",\"name\":\"node-ipc\",\"version\":\"*\"}" }
+      ]
+    },
+    {
+      "name": "Stale dependency (older than 3 years)",
+      "operator": "ANY",
+      "violationState": "INFO",
+      "conditions": [
+        { "subject": "AGE", "operator": "NUMERIC_GREATER_THAN", "value": "P3Y" }
+      ]
+    }
+  ]
+}

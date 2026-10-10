@@ -3,7 +3,7 @@ TF_DIR := infra/terraform
 REGION ?= eu-central-1
 CLUSTER ?= $(shell cd $(TF_DIR) && terraform output -raw cluster_name 2>/dev/null)
 
-.PHONY: help init plan apply destroy kubeconfig outputs ui-argocd ui-argo ui-dtrack argocd-password add-projects run status lint local-up local-down local-secrets
+.PHONY: help init plan apply destroy kubeconfig outputs ui-argocd ui-argo ui-dtrack argocd-password add-projects run release status lint local-up local-down local-secrets
 
 local-up: ## run everything on a local kind cluster (free). Needs docker, kind, kubectl, helm
 	local/up.sh
@@ -53,6 +53,9 @@ add-projects: ## usage: make add-projects URLS="https://... https://..."
 
 run: ## trigger scans: make run NAMES="a b" or make run NAMES=--all
 	scripts/run-scans.sh $(NAMES)
+
+release: ## App Store/TestFlight release of a gate-passed commit: make release NAME=app [DRY=1]
+	scripts/release.sh $(NAME) $(if $(DRY),--dry-run)
 
 status: ## workflows + Dependency-Track summary
 	scripts/status.sh

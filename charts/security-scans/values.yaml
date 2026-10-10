@@ -9,9 +9,14 @@ defaults:
   gate:
     critical: 0     # fail the run when trivy finds more CRITICAL vulns than this
     high: 10
+    policy: block   # Dependency-Track policy violations: block (FAIL state blocks) | report | off
   deploy:
     enabled: true   # run the detected/declared deploy command after the gate passes
     stage: dev      # SST stage: npx sst deploy --stage <stage>
+  # App Store / TestFlight release (local mode, built on the Mac via local/mac-release.sh).
+  # Per project: appstore: { enabled, path, builds: [{ scheme, platform: ios|macos }] }
+  appstore:
+    enabled: false
   timezone: Europe/Berlin
   workspaceSize: 10Gi
 
@@ -29,6 +34,15 @@ aws:
 
 dependencyTrack:
   url: http://dependency-track-api-server.dependency-track.svc.cluster.local:8080
+  analysisTimeoutSeconds: 600   # dtrack-policy waits this long for BOM analysis; then the gate fails closed
+
+# Release to App Store Connect (local mode): the appstore-release workflow SSHes to the Mac, where a
+# forced command (local/mac-release.sh) builds and uploads. Host/user come from local/up.sh.
+appstore:
+  macHost: 192.168.127.254      # podman gvproxy address of the host Mac, as seen from pods
+  macUser: ""
+  sshSecret: mac-release-ssh    # keys: id_ed25519, known_hosts (local/up.sh)
+  candidateMaxAgeDays: 7        # a release needs a gate-passed scan younger than this
 
 secrets:
   # AWS Secrets Manager names (created by Terraform)
@@ -39,6 +53,7 @@ secrets:
 serviceAccount:
   name: security-scan      # scanners: S3 reports only
   deploy: security-deploy  # deploy step: assumes the deployer role
+  release: security-release  # writes/reads release-candidate ConfigMaps; never runs repo code
 
 # Runtime detection pipe (needs trivy-operator + gatekeeper apps): Trivy Operator SBOMs of every
 # running image → Dependency-Track ("runtime/<image>"), vuln + Gatekeeper audit summaries → bucket.

@@ -23,6 +23,12 @@
 #   semgrep   run semgrep (slower)                         default: true
 #   deploy    { enabled: bool, stage: <sst stage> }        default: enabled, stage dev
 #   commands  { install, build, test, deploy }  explicit commands, override detection
+#   gate.policy  block | report | off: Dependency-Track policy violations in state FAIL block
+#             deploy and release unless approved/suppressed in D-Track   default: block
+#   appstore  { enabled, path, builds: [{ scheme, platform: ios|macos|catalyst }] }
+#             path = project.yml (XcodeGen), .xcodeproj or .xcworkspace inside the repo.
+#             enabled: true → a gate-passed scan becomes the release candidate; ship it with
+#             scripts/release.sh <name> (built + uploaded on the Mac, local/mac-release.sh)
 #
 projects:
   - name: example-sst-app
@@ -59,12 +65,23 @@ projects:
     schedule: 40 3 * * *
     deploy:
       enabled: false
+    appstore:
+      enabled: false
+      path: swift/project.yml
+      builds:
+        - { scheme: DontForgetMe, platform: ios }
   - name: ejectify
     repo: https://github.com/afitterling/Ejectify.git
     ref: main
     schedule: 50 3 * * *
     deploy:
       enabled: false
+    appstore:
+      enabled: false
+      path: eject-tool/project.yml
+      builds:
+        - { scheme: Ejectify, platform: macos }
+        - { scheme: EjectifyMobile, platform: ios }
   - name: kidweatherapp
     repo: https://github.com/afitterling/kidweatherapp.git
     ref: main
@@ -83,6 +100,11 @@ projects:
     schedule: 20 4 * * *
     deploy:
       enabled: false
+    appstore:
+      enabled: false
+      path: MarkdownDarkReader.xcodeproj
+      builds:
+        - { scheme: MarkdownDarkReader, platform: macos }
   - name: market-compass
     repo: https://github.com/afitterling/market-compass.git
     ref: main
@@ -95,6 +117,12 @@ projects:
     schedule: 40 4 * * *
     deploy:
       enabled: false
+    appstore:
+      enabled: false
+      path: swift/project.yml
+      builds:
+        - { scheme: ShoppingList, platform: ios }
+        - { scheme: ShoppingList, platform: catalyst }
   - name: sp33c-tech-profile
     repo: https://github.com/afitterling/sp33c.tech-profile.git
     ref: main
@@ -173,6 +201,11 @@ projects:
     schedule: 50 6 * * *
     deploy:
       enabled: false
+    appstore:
+      enabled: false
+      path: app/ios/Parla.xcworkspace
+      builds:
+        - { scheme: Parla, platform: ios }
   - name: claude-hook-popup
     repo: https://github.com/afitterling/claude-hook-popup.git
     ref: main

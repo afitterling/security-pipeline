@@ -1,0 +1,97 @@
+{{- if eq .Values.mode "local" }}
+# Manual App Store / TestFlight release. Start it after a scan left a release candidate:
+#   scripts/release.sh <project> [--dry-run]      or Argo UI → Workflow Templates → appstore-release → Submit
+# The build runs on the developer Mac: this workflow SSHes in with a key that is pinned to one forced
+# command (local/mac-release.sh). The App Store Connect key never leaves ~/.appstoreconnect.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: appstore-release
+  labels:
+    app.kubernetes.io/part-of: security-pipeline
+spec:
+  entrypoint: release
+  serviceAccountName: {{ .Values.serviceAccount.release }}
+  arguments:
+    parameters:
+      - name: project
+      - name: dry-run            # "true": archive + export on the Mac, no upload
+        value: "false"
+  podMetadata:
+    labels:
+      app.kubernetes.io/part-of: security-pipeline
+      security-pipeline/project: "{{ "{{" }}workflow.parameters.project{{ "}}" }}"
+  templates:
+    - name: release
+      steps:
+        - - name: check
+            template: check
+        - - name: build-upload
+            template: build-upload
+            arguments:
+              parameters:
+                - { name: commit, value: "{{ "{{" }}steps.check.outputs.parameters.commit{{ "}}" }}" }
+
+    # Only a commit that passed every gate (trivy, gitleaks, Dependency-Track policies) may ship.
+    - name: check
+      container:
+        image: {{ .Values.images.k8s }}
+        command: [sh, -ec]
+        args:
+          - |
+            cm="release-candidate-$PROJECT"
+            kubectl get configmap "$cm" -o json > /tmp/cm.json 2>/dev/null \
+              || { echo "no release candidate for $PROJECT: run a scan first (appstore.enabled must be true and the gate must pass)"; exit 1; }
+            commit=$(jq -r '.data.commit' /tmp/cm.json)
+            age=$(( $(date +%s) - $(jq -r '.data.time' /tmp/cm.json) ))
+            echo "candidate $PROJECT @ $commit from $(jq -r '.data.workflow' /tmp/cm.json), $((age / 3600))h old"
+            jq -r '.data["summary.json"]' /tmp/cm.json
+            [ "$age" -le $((MAX_AGE_DAYS * 86400)) ] || { echo "candidate older than $MAX_AGE_DAYS days: rescan first"; exit 1; }
+            echo "$commit" | grep -Eq '^[0-9a-f]{40}$' || { echo "bad commit in candidate"; exit 1; }
+            printf %s "$commit" > /tmp/commit
+        env:
+          - { name: PROJECT, value: "{{ "{{" }}workflow.parameters.project{{ "}}" }}" }
+          - { name: MAX_AGE_DAYS, value: {{ .Values.appstore.candidateMaxAgeDays | quote }} }
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+      outputs:
+        parameters:
+          - name: commit
+            valueFrom: { path: /tmp/commit }
+
+    - name: build-upload
+      inputs:
+        parameters: [{ name: commit }]
+      container:
+        image: {{ .Values.images.git }}   # alpine/git ships the openssh client
+        command: [sh, -ec]
+        args:
+          - |
+            [ -n "$MAC_USER" ] || { echo "appstore.macUser is empty: rerun local/up.sh after local/mac-release-setup.sh"; exit 1; }
+            mkdir -p /tmp/out
+            # The forced command on the Mac ignores everything except "<project> <commit> <dry-run>".
+            ssh -i /ssh/id_ed25519 -o UserKnownHostsFile=/ssh/known_hosts -o StrictHostKeyChecking=yes \
+                -o BatchMode=yes -o ServerAliveInterval=30 -o ConnectTimeout=15 \
+                "$MAC_USER@$MAC_HOST" "$PROJECT $COMMIT $DRY_RUN" 2>&1 | tee /tmp/out/release.log
+            rc=$(tail -n1 /tmp/out/release.log | sed -n 's/^RESULT rc=\([0-9]*\).*/\1/p')
+            [ "${rc:-1}" = 0 ]
+        env:
+          - { name: PROJECT, value: "{{ "{{" }}workflow.parameters.project{{ "}}" }}" }
+          - { name: COMMIT, value: "{{ "{{" }}inputs.parameters.commit{{ "}}" }}" }
+          - { name: DRY_RUN, value: "{{ "{{" }}workflow.parameters.dry-run{{ "}}" }}" }
+          - { name: MAC_HOST, value: {{ .Values.appstore.macHost | quote }} }
+          - { name: MAC_USER, value: {{ .Values.appstore.macUser | quote }} }
+        volumeMounts:
+          - { name: ssh, mountPath: /ssh, readOnly: true }
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+      volumes:
+        - name: ssh
+          secret:
+            secretName: {{ .Values.appstore.sshSecret }}
+            defaultMode: 0400
+      activeDeadlineSeconds: 5400
+      outputs:
+        artifacts:
+          - name: release-log
+            path: /tmp/out
+            archive: { none: {} }
+{{- end }}

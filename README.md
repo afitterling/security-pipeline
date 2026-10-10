@@ -23,7 +23,12 @@ projects.yaml ──git push──▶ Argo CD ──▶ one CronWorkflow per rep
   --stage <stage>`; plain `package.json` → build/test only; Python, Terraform, Swift (scan-only).
   Override with `commands:` in `projects.yaml` or `.security-pipeline.json` in the repo.
 - **Gate before deploy**: deploy runs only if trivy CRITICAL/HIGH counts are within the
-  project's `gate` and gitleaks found nothing.
+  project's `gate`, gitleaks found nothing, and Dependency-Track reports no policy violation in
+  state FAIL (`gate.policy: block`; approve or suppress a violation in the D-Track UI to let it pass).
+- **EPSS**: every run stores the top findings by exploit probability (`epss.json`, `epssMax` in
+  `summary.json`); `scripts/status.sh` lists max EPSS per project.
+- **App Store**: projects with `appstore.enabled` become release candidates when the gate passes;
+  `scripts/release.sh <name>` builds and uploads them to TestFlight on your Mac (local mode).
 - **Reports** (SBOMs, trivy/semgrep/gitleaks JSON+SARIF, build/deploy logs, summary.json) land in
   S3 under `security/<project>/<date>/<run>/`.
 
@@ -141,6 +146,36 @@ identity via a generated `~/.aws/config`, so configs that hardcode a profile dep
 
 To deploy a stage other than `dev`, set `deploy.stage` per project. To scan without deploying,
 `deploy.enabled: false`.
+
+## Dependency-Track policies as a gate
+
+`dtrack-policy` (after `upload-bom`) waits until Dependency-Track has analysed the BOM, then reads
+the project's policy violations and EPSS scores. The gate fails on any FAIL violation that is not
+approved or suppressed; WARN/INFO are only counted. Per project: `gate: { policy: block | report | off }`.
+
+```bash
+DTRACK_ADMIN_PASSWORD=... scripts/dtrack-bootstrap.sh --local --policies --no-key
+#  adds VIEW_POLICY_VIOLATION to the pipeline team, enables OSV ecosystems + EPSS,
+#  creates the starter policies in policies/dependency-track/policies.json
+```
+
+## App Store / TestFlight releases (local mode)
+
+Xcode needs macOS, so releases are built on the Mac, not in the cluster:
+
+1. `local/mac-release-setup.sh` once: an SSH key that may only run `local/mac-release.sh`
+   (forced command, localhost only), a LaunchAgent worker that builds in your login session
+   (keychain + gh), and the cluster secret `mac-release-ssh`. Needs Remote Login turned on.
+2. In `projects.yaml` set `appstore.enabled: true` for the app (`path` = XcodeGen `project.yml`,
+   `.xcodeproj` or `.xcworkspace`; `builds` = scheme + platform ios|macos|catalyst). Commit + push.
+3. Scan it. If every gate passes, the ConfigMap `release-candidate-<name>` records the commit.
+4. Approve by starting the release: `scripts/release.sh <name> --dry-run` (archive + export only),
+   then `scripts/release.sh <name>` (upload), or Argo UI → Workflow Templates → `appstore-release`.
+
+The Mac re-reads repo/path/schemes from its own checkout of `projects.yaml`, checks the commit is
+on the configured branch, sets the build number to App Store Connect's highest + 1 (no commit back
+to the app repo) and uploads with the key in `~/.appstoreconnect`, which never enters the cluster.
+Logs: Argo UI and `~/Library/Logs/security-pipeline/`. Submitting for review stays manual.
 
 ## Security posture
 

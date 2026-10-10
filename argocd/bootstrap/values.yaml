@@ -15,6 +15,10 @@ local:
     bucket: reports
     storage: 20Gi
     secret: minio-credentials   # keys rootUser/rootPassword, created by local/up.sh in minio, argo, security
+  # App Store releases are built on the host Mac over SSH (local/mac-release-setup.sh, set by local/up.sh)
+  mac:
+    host: 192.168.127.254       # podman gvproxy: the host as seen from pods
+    user: ""
 
 aws:
   region: eu-central-1

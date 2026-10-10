@@ -29,7 +29,14 @@ IAM role (iam.tf). Scanners use `security-scan` → S3-only role. Keep that spli
   with `mode=local`: MinIO instead of S3, plain secrets instead of External Secrets, `~/.aws`
   mounted into the deploy step. `mode` is a value on both charts; keep every AWS-only resource
   behind `{{ if eq .Values.mode "aws" }}`.
-- `scripts/` — `add-projects.sh`, `run-scans.sh`, `status.sh`, `dtrack-bootstrap.sh [--local]`, `ui.sh`.
+- `scripts/` — `add-projects.sh`, `run-scans.sh`, `status.sh`, `dtrack-bootstrap.sh [--local] [--policies]`,
+  `release.sh`, `ui.sh`.
+- Gate = trivy counts + gitleaks + Dependency-Track policy violations (`dtrack-policy` task, FAIL
+  blocks unless approved in D-Track; starter set in `policies/dependency-track/policies.json`).
+- App Store releases (local mode): `appstore:` in `projects.yaml` → `release-candidate-<name>`
+  ConfigMap (SA `security-release`, never the scanner SA) → `appstore-release` WorkflowTemplate →
+  SSH forced command `local/mac-release.sh` → LaunchAgent worker builds/uploads on the Mac. The
+  App Store key stays in `~/.appstoreconnect`; the cluster only gets the restricted SSH key.
 - `Makefile` — thin wrappers; run `make help`.
 
 ## Commands

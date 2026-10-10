@@ -79,6 +79,13 @@ if [ -d "$AWS_DIR" ] && { [ $refresh -eq 1 ] || ! kubectl -n security get secret
   [ -f "$AWS_DIR/config" ] && args+=(--from-file=config="$AWS_DIR/config")
   [ ${#args[@]} -gt 0 ] && mk security aws-credentials "${args[@]}" && echo "~/.aws copied into the cluster for the deploy step (secret security/aws-credentials)"
 fi
+# App Store releases: SSH key for the forced command on this Mac (local/mac-release-setup.sh)
+MAC_KEY="$HOME/.ssh/security-pipeline-release"
+if [ -f "$MAC_KEY" ] && [ -f /etc/ssh/ssh_host_ed25519_key.pub ]; then
+  kh=$(mktemp); awk '{print "192.168.127.254", $1, $2}' /etc/ssh/ssh_host_ed25519_key.pub > "$kh"
+  mk security mac-release-ssh --from-file=id_ed25519="$MAC_KEY" --from-file=known_hosts="$kh"; rm -f "$kh"
+  echo "secret security/mac-release-ssh written (App Store releases)"
+fi
 
 # ---- Argo CD
 helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
@@ -95,7 +102,8 @@ echo "argo cd installed"
 
 # ---- root app (mode=local → RustFS object store, no IRSA, no External Secrets)
 helm upgrade --install security-pipeline-root argocd/bootstrap -n argocd \
-  --set mode=local --set repoURL="$REPO_URL" --set targetRevision="$REPO_REV" >/dev/null
+  --set mode=local --set repoURL="$REPO_URL" --set targetRevision="$REPO_REV" \
+  --set local.mac.user="$USER" >/dev/null
 echo "root application installed (repo $REPO_URL @ $REPO_REV)"
 
 cat <<EOF

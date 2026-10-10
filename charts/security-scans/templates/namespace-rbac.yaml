@@ -56,6 +56,48 @@ subjects:
     name: {{ .Values.serviceAccount.deploy }}
     namespace: {{ .Release.Namespace }}
 ---
+# Release identity: writes/reads release-candidate-* ConfigMaps (scan) and runs appstore-release.
+# Separate from the scanner SA because build-test executes repo code under that one.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.release }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.serviceAccount.release }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.release }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.serviceAccount.release }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.release }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.release }}-executor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.serviceAccount.name }}-executor
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.release }}
+    namespace: {{ .Release.Namespace }}
+---
 # Repo inspection script (files/detect.js), mounted into the detect step
 apiVersion: v1
 kind: ConfigMap

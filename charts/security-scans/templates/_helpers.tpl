@@ -4,6 +4,7 @@
 {{- $p := .project -}}
 {{- $gate := merge (deepCopy ($p.gate | default dict)) $d.gate -}}
 {{- $deploy := merge (deepCopy ($p.deploy | default dict)) $d.deploy -}}
+{{- $appstore := merge (deepCopy ($p.appstore | default dict)) $d.appstore -}}
 {{- $out := dict
   "name" (required "project.name is required" $p.name)
   "repo" (required (printf "project %s: repo is required" $p.name) $p.repo)
@@ -14,6 +15,7 @@
   "semgrep" (ternary $p.semgrep $d.semgrep (hasKey $p "semgrep"))
   "gate" $gate
   "deploy" $deploy
+  "appstore" $appstore
   "commands" ($p.commands | default dict)
 -}}
 {{- $out | toJson -}}
