@@ -8,12 +8,21 @@
 # Env (all optional):
 #   REPO_URL      git URL Argo CD pulls from   default: git remote origin
 #   REPO_REV      branch                       default: current branch
-#   GIT_TOKEN     read-only token for private repos (Argo CD + clone step)
+#   GIT_TOKEN     read-only token for private repos (Argo CD + clone step); may live in ./.env (gitignored)
 #   GIT_USERNAME  default: git
 #   DTRACK_API_KEY  if you already have one (else run scripts/dtrack-bootstrap.sh --local later)
 #   AWS_DIR       default: ~/.aws   (mounted into the deploy step so `npx sst deploy` works)
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Optional .env (gitignored) for GIT_TOKEN, GIT_USERNAME, DTRACK_API_KEY, REPO_URL. Env vars already set win.
+if [ -f .env ]; then
+  while IFS='=' read -r k v; do
+    k="${k%%#*}"; k="$(echo "$k" | xargs)"; [ -n "$k" ] || continue
+    v="${v%\"}"; v="${v#\"}"
+    [ -z "${!k:-}" ] && export "$k=$v"
+  done < .env
+  echo ".env loaded"
+fi
 for t in kubectl helm; do command -v $t >/dev/null || { echo "$t missing: brew install kubectl helm kind"; exit 1; }; done
 
 use_kind=1; refresh=0
