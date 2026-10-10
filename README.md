@@ -128,9 +128,10 @@ documented at the top of `projects.yaml`.
 Run them now instead of waiting for the schedule:
 
 ```bash
-scripts/run-scans.sh --all            # everything
-scripts/run-scans.sh fin-wise         # one
-scripts/run-scans.sh --all --wait     # block, non-zero exit if any run failed
+scripts/run-scans.sh --all            # everything, rolling: one scan at a time, next after the previous finished
+scripts/run-scans.sh fin-wise         # one (or several names, run in that order)
+scripts/run-scans.sh --all --resume   # same, but skip projects that already have a successful run
+scripts/run-scans.sh --all --parallel # submit all at once and return (the controller queues them)
 make ui-argo                          # http://localhost:2746 — DAG, logs, history
 scripts/status.sh                     # apps, schedules, last runs, Dependency-Track portfolio
 ```
