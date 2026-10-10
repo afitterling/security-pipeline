@@ -27,9 +27,9 @@ for url in "${urls[@]}"; do
   if yq -e ".projects[] | select(.name == \"$name\")" projects.yaml >/dev/null 2>&1; then
     echo "skip   $name (already in projects.yaml)"; continue
   fi
-  slot=$(( (count + added) % 12 ))
-  minute=$(( slot * 10 ))
-  hour=$(( 3 + (count + added) / 12 ))
+  idx=$(( count + added ))
+  minute=$(( (idx % 6) * 10 ))      # 6 slots per hour, 10 min apart
+  hour=$(( (3 + idx / 6) % 24 ))
   schedule=$(printf '%d %d * * *' "$minute" "$hour")
   NAME="$name" URL="$url" REF="$ref" SCHED="$schedule" \
     yq -i '.projects += [{"name": env(NAME), "repo": env(URL), "ref": env(REF), "schedule": env(SCHED)}]' projects.yaml

@@ -32,7 +32,6 @@ projects:
     enabled: false
     deploy:
       stage: dev
-
   - name: example-custom
     repo: https://github.com/<you>/example-custom.git
     enabled: false
@@ -42,3 +41,75 @@ projects:
       install: npm ci
       test: npm test
       deploy: npx sst deploy --stage alex1
+  - name: aws-firewall
+    repo: https://github.com/afitterling/AWS-Firewall.git
+    ref: main
+    schedule: 20 3 * * *
+    deploy:
+      enabled: false
+  - name: aws-remix
+    repo: https://github.com/afitterling/aws-remix.git
+    ref: dev
+    schedule: 30 3 * * *
+    deploy:
+      enabled: false
+  - name: do-not-forget-me
+    repo: https://github.com/afitterling/do-not-forget-me.git
+    ref: main
+    schedule: 40 3 * * *
+    deploy:
+      enabled: false
+  - name: ejectify
+    repo: https://github.com/afitterling/Ejectify.git
+    ref: main
+    schedule: 50 3 * * *
+    deploy:
+      enabled: false
+  - name: kidweatherapp
+    repo: https://github.com/afitterling/kidweatherapp.git
+    ref: main
+    schedule: 0 4 * * *
+    deploy:
+      enabled: false
+  - name: lucerna
+    repo: https://github.com/afitterling/lucerna.git
+    ref: main
+    schedule: 10 4 * * *
+    deploy:
+      enabled: false
+  - name: markdown
+    repo: https://github.com/afitterling/markdown.git
+    ref: main
+    schedule: 20 4 * * *
+    deploy:
+      enabled: false
+  - name: market-compass
+    repo: https://github.com/afitterling/market-compass.git
+    ref: main
+    schedule: 30 4 * * *
+    deploy:
+      enabled: false
+  - name: shopping-list
+    repo: https://github.com/afitterling/shopping-list.git
+    ref: main
+    schedule: 40 4 * * *
+    deploy:
+      enabled: false
+  - name: sp33c-tech-profile
+    repo: https://github.com/afitterling/sp33c.tech-profile.git
+    ref: main
+    schedule: 50 4 * * *
+    deploy:
+      enabled: false
+  - name: timewarp-timelogger
+    repo: https://github.com/afitterling/timewarp-timelogger.git
+    ref: main
+    schedule: 0 5 * * *
+    deploy:
+      enabled: false
+  - name: web-hook-push
+    repo: https://github.com/afitterling/web-hook-push.git
+    ref: main
+    schedule: 10 5 * * *
+    deploy:
+      enabled: false
