@@ -50,5 +50,4 @@ spec:
       - docker.io/semgrep/
       - docker.io/curlimages/
       - docker.io/library/node
-      - ghcr.io/jqlang/
       - quay.io/argoproj/

@@ -254,7 +254,7 @@ spec:
     # ---------------------------------------------------------------- gate
     - name: gate
       container:
-        image: {{ .Values.images.jq }}
+        image: {{ .Values.images.k8s }}   # alpine/k8s: sh + jq (the jq image is distroless, no shell)
         command: [sh, -ec]
         args:
           - |
