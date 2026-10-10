@@ -19,7 +19,14 @@ for t in kubectl helm; do command -v $t >/dev/null || { echo "$t missing: brew i
 use_kind=1; refresh=0
 for a in "$@"; do case "$a" in --no-kind) use_kind=0 ;; --refresh-secrets) refresh=1 ;; esac; done
 
-REPO_URL=${REPO_URL:-$(git remote get-url origin 2>/dev/null || true)}
+origin_url=$(git remote get-url origin 2>/dev/null || true)
+if [ -n "${REPO_URL:-}" ] && [ -n "$origin_url" ] && [ "${REPO_URL%.git}" != "${origin_url%.git}" ] \
+   && [ "${REPO_URL%.git}" != "https://github.com/${origin_url#git@github.com:}" ]; then
+  echo "WARNING: REPO_URL=$REPO_URL is set in your environment but this repo's origin is $origin_url."
+  echo "         Argo CD will pull charts from REPO_URL. If that is a leftover from another project: unset REPO_URL"
+  read -r -p "Continue with REPO_URL? [y/N] " ans; [ "${ans:-n}" = y ] || exit 1
+fi
+REPO_URL=${REPO_URL:-$origin_url}
 REPO_REV=${REPO_REV:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)}
 [ -n "$REPO_URL" ] || { echo "REPO_URL not set and no git remote 'origin'. Push this repo first."; exit 1; }
 case "$REPO_URL" in git@github.com:*) REPO_URL="https://github.com/${REPO_URL#git@github.com:}" ;; esac
