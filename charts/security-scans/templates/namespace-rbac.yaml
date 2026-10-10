@@ -56,7 +56,7 @@ subjects:
     name: {{ .Values.serviceAccount.deploy }}
     namespace: {{ .Release.Namespace }}
 ---
-# Release identity: writes/reads release-candidate-* ConfigMaps (scan) and runs appstore-release.
+# Release identity: writes/reads release-candidate-* ConfigMaps (scan) and runs upload-to-testflight.
 # Separate from the scanner SA because build-test executes repo code under that one.
 apiVersion: v1
 kind: ServiceAccount

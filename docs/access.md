@@ -31,7 +31,7 @@ Notes
 - Scripts that need the API (`scripts/status.sh`, `scripts/dtrack-tags.sh`, `scripts/dtrack-bootstrap.sh`)
   open their own temporary forward on 18081-18083, so they work without `make ui-dtrack`.
 - App Store releases: pods reach the Mac's SSH server at `192.168.127.254:22` (podman gvproxy), see
-  [workflow.md](workflow.md#app-store-release-manual-appstore-release-workflowtemplate-local-mode).
+  [workflow.md](workflow.md#upload-to-testflight-manual-upload-to-testflight-workflowtemplate-local-mode).
 
 ## Dependency-Track project tags
 

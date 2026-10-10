@@ -25,12 +25,14 @@
 #   commands  { install, build, test, deploy }  explicit commands, override detection
 #   visibility public | private (GitHub), set by add-projects.sh → Dependency-Track tag
 #   tags      [extra, dependency-track, tags]              default: none
+#             appleapp = repo contains Swift (enables upload-to-testflight)
 #   gate.policy  block | report | off: Dependency-Track policy violations in state FAIL block
 #             deploy and release unless approved/suppressed in D-Track   default: block
-#   appstore  { enabled, path, builds: [{ scheme, platform: ios|macos|catalyst }] }
+#   appstore  { path, builds: [{ scheme, platform: ios|macos|catalyst }] }
 #             path = project.yml (XcodeGen), .xcodeproj or .xcworkspace inside the repo.
-#             enabled: true → a gate-passed scan becomes the release candidate; ship it with
-#             scripts/release.sh <name> (built + uploaded on the Mac, local/mac-release.sh)
+#             With tag appleapp (repos with Swift) a gate-passed scan becomes the TestFlight
+#             candidate; upload with scripts/release.sh <name> (upload-to-testflight workflow,
+#             built + uploaded on the Mac by local/mac-release.sh)
 #
 projects:
   - name: example-sst-app
@@ -70,11 +72,12 @@ projects:
     deploy:
       enabled: false
     appstore:
-      enabled: false
       path: swift/project.yml
       builds:
         - { scheme: DontForgetMe, platform: ios }
     visibility: private
+    tags:
+      - appleapp
   - name: ejectify
     repo: https://github.com/afitterling/Ejectify.git
     ref: main
@@ -82,12 +85,13 @@ projects:
     deploy:
       enabled: false
     appstore:
-      enabled: false
       path: eject-tool/project.yml
       builds:
         - { scheme: Ejectify, platform: macos }
         - { scheme: EjectifyMobile, platform: ios }
     visibility: private
+    tags:
+      - appleapp
   - name: kidweatherapp
     repo: https://github.com/afitterling/kidweatherapp.git
     ref: main
@@ -102,6 +106,8 @@ projects:
     deploy:
       enabled: false
     visibility: private
+    tags:
+      - appleapp
   - name: markdown
     repo: https://github.com/afitterling/markdown.git
     ref: main
@@ -109,11 +115,12 @@ projects:
     deploy:
       enabled: false
     appstore:
-      enabled: false
       path: MarkdownDarkReader.xcodeproj
       builds:
         - { scheme: MarkdownDarkReader, platform: macos }
     visibility: private
+    tags:
+      - appleapp
   - name: market-compass
     repo: https://github.com/afitterling/market-compass.git
     ref: main
@@ -121,6 +128,8 @@ projects:
     deploy:
       enabled: false
     visibility: private
+    tags:
+      - appleapp
   - name: shopping-list
     repo: https://github.com/afitterling/shopping-list.git
     ref: main
@@ -128,12 +137,13 @@ projects:
     deploy:
       enabled: false
     appstore:
-      enabled: false
       path: swift/project.yml
       builds:
         - { scheme: ShoppingList, platform: ios }
         - { scheme: ShoppingList, platform: catalyst }
     visibility: private
+    tags:
+      - appleapp
   - name: sp33c-tech-profile
     repo: https://github.com/afitterling/sp33c.tech-profile.git
     ref: main
@@ -190,6 +200,8 @@ projects:
     deploy:
       enabled: false
     visibility: public
+    tags:
+      - appleapp
   - name: enclave-oss
     repo: https://github.com/afitterling/enclave-oss.git
     ref: main
@@ -225,11 +237,12 @@ projects:
     deploy:
       enabled: false
     appstore:
-      enabled: false
       path: app/ios/Parla.xcworkspace
       builds:
         - { scheme: Parla, platform: ios }
     visibility: public
+    tags:
+      - appleapp
   - name: claude-hook-popup
     repo: https://github.com/afitterling/claude-hook-popup.git
     ref: main
@@ -237,6 +250,8 @@ projects:
     deploy:
       enabled: false
     visibility: public
+    tags:
+      - appleapp
   - name: budget-cognito-dev
     repo: https://github.com/afitterling/budget-cognito-dev.git
     ref: main
@@ -251,6 +266,8 @@ projects:
     deploy:
       enabled: false
     visibility: public
+    tags:
+      - appleapp
   - name: macos-sleepme-menuapp
     repo: https://github.com/afitterling/macOS-sleepme-menuapp.git
     ref: main
@@ -258,6 +275,8 @@ projects:
     deploy:
       enabled: false
     visibility: public
+    tags:
+      - appleapp
   - name: claude-todo-skill
     repo: https://github.com/afitterling/claude-todo-skill.git
     ref: main
@@ -279,6 +298,8 @@ projects:
     deploy:
       enabled: false
     visibility: public
+    tags:
+      - appleapp
   - name: lm-code-builder
     repo: https://github.com/afitterling/lm-code-builder.git
     ref: main
@@ -300,6 +321,8 @@ projects:
     deploy:
       enabled: false
     visibility: public
+    tags:
+      - appleapp
   - name: deterministic-reasoning-infrastructure
     repo: https://github.com/afitterling/Deterministic-Reasoning-Infrastructure.git
     ref: main

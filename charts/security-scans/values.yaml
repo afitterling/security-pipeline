@@ -13,10 +13,11 @@ defaults:
   deploy:
     enabled: true   # run the detected/declared deploy command after the gate passes
     stage: dev      # SST stage: npx sst deploy --stage <stage>
-  # App Store / TestFlight release (local mode, built on the Mac via local/mac-release.sh).
-  # Per project: appstore: { enabled, path, builds: [{ scheme, platform: ios|macos }] }
-  appstore:
-    enabled: false
+  # TestFlight (local mode, built on the Mac via local/mac-release.sh): a project tagged
+  # <testflightTag> that has appstore: { path, builds: [{ scheme, platform }] } becomes an upload
+  # candidate when its gate passes; upload-to-testflight ships it (started by hand).
+  appstore: {}
+  testflightTag: appleapp
   timezone: Europe/Berlin
   workspaceSize: 10Gi
 
@@ -36,7 +37,7 @@ dependencyTrack:
   url: http://dependency-track-api-server.dependency-track.svc.cluster.local:8080
   analysisTimeoutSeconds: 600   # dtrack-policy waits this long for BOM analysis; then the gate fails closed
 
-# Release to App Store Connect (local mode): the appstore-release workflow SSHes to the Mac, where a
+# Release to App Store Connect (local mode): the upload-to-testflight workflow SSHes to the Mac, where a
 # forced command (local/mac-release.sh) builds and uploads. Host/user come from local/up.sh.
 appstore:
   macHost: 192.168.127.254      # podman gvproxy address of the host Mac, as seen from pods

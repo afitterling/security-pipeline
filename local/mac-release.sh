@@ -1,5 +1,5 @@
 #!/bin/bash
-# App Store / TestFlight release on this Mac, driven by the appstore-release workflow.
+# TestFlight upload on this Mac, driven by the upload-to-testflight workflow.
 #
 # Three ways in:
 #   (ssh forced command)   SSH_ORIGINAL_COMMAND="<project> <40-hex commit> <true|false>"
@@ -10,7 +10,7 @@
 #   --run <project> <commit> [true|false]   Build directly in this terminal (manual test).
 #
 # Nothing from the cluster is trusted except project name + commit: repo, path, schemes and
-# platforms come from projects.yaml in this checkout, and the project needs appstore.enabled: true.
+# platforms come from projects.yaml in this checkout, and the project needs the tag appleapp.
 # The commit must be on the configured ref. Credentials: ~/.appstoreconnect (never printed).
 set -uo pipefail
 export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
@@ -30,9 +30,10 @@ release() {
     name = ARGV[1]
     p = (YAML.load_file(ARGV[0])["projects"] || []).find { |x| x["name"] == name } or abort "unknown project #{name}"
     a = p["appstore"] || {}
-    abort "#{name}: appstore.enabled is not true in projects.yaml" unless a["enabled"] == true
+    abort "#{name}: not tagged appleapp in projects.yaml" unless (p["tags"] || []).map { |t| t.to_s.downcase }.include?("appleapp")
     path = a["path"].to_s
-    abort "#{name}: bad appstore.path" if path.empty? || path.start_with?("/") || path.split("/").include?("..")
+    abort "#{name}: no appstore: { path, builds } block in projects.yaml" if path.empty?
+    abort "#{name}: bad appstore.path" if path.start_with?("/") || path.split("/").include?("..")
     builds = a["builds"] || []
     abort "#{name}: appstore.builds is empty" if builds.empty?
     puts p["repo"], (p["ref"] || "main"), path

@@ -1,12 +1,14 @@
 {{- if eq .Values.mode "local" }}
-# Manual App Store / TestFlight release. Start it after a scan left a release candidate:
-#   scripts/release.sh <project> [--dry-run]      or Argo UI → Workflow Templates → appstore-release → Submit
+# Upload to TestFlight, only for projects tagged appleapp (projects.yaml tags:, see values
+# defaults.testflightTag) that have an appstore: { path, builds } block. Started by hand after a scan
+# whose gate passed left a candidate:
+#   scripts/release.sh <project> [--dry-run]   or Argo UI → Workflow Templates → upload-to-testflight → Submit
 # The build runs on the developer Mac: this workflow SSHes in with a key that is pinned to one forced
 # command (local/mac-release.sh). The App Store Connect key never leaves ~/.appstoreconnect.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
-  name: appstore-release
+  name: upload-to-testflight
   labels:
     app.kubernetes.io/part-of: security-pipeline
 spec:
@@ -39,9 +41,13 @@ spec:
         command: [sh, -ec]
         args:
           - |
+            # Eligibility comes from git (projects.yaml rendered into security-scans-projects), not from the caller
+            ok=$(kubectl get configmap security-scans-projects -o jsonpath='{.data.projects\.json}' \
+              | jq -r --arg p "$PROJECT" '.[] | select(.name == $p) | .testflight')
+            [ "$ok" = true ] || { echo "$PROJECT is not a TestFlight app: needs tag $TAG and an appstore: { path, builds } block in projects.yaml"; exit 1; }
             cm="release-candidate-$PROJECT"
             kubectl get configmap "$cm" -o json > /tmp/cm.json 2>/dev/null \
-              || { echo "no release candidate for $PROJECT: run a scan first (appstore.enabled must be true and the gate must pass)"; exit 1; }
+              || { echo "no TestFlight candidate for $PROJECT: run a scan first, its gate must pass"; exit 1; }
             commit=$(jq -r '.data.commit' /tmp/cm.json)
             age=$(( $(date +%s) - $(jq -r '.data.time' /tmp/cm.json) ))
             echo "candidate $PROJECT @ $commit from $(jq -r '.data.workflow' /tmp/cm.json), $((age / 3600))h old"
@@ -52,6 +58,7 @@ spec:
         env:
           - { name: PROJECT, value: "{{ "{{" }}workflow.parameters.project{{ "}}" }}" }
           - { name: MAX_AGE_DAYS, value: {{ .Values.appstore.candidateMaxAgeDays | quote }} }
+          - { name: TAG, value: {{ .Values.defaults.testflightTag | default "appleapp" | quote }} }
         resources: {{ toYaml .Values.resources.small | nindent 10 }}
       outputs:
         parameters:

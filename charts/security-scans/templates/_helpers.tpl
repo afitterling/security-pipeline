@@ -20,6 +20,7 @@
   "deploy" $deploy
   "appstore" $appstore
   "tags" ($tags | uniq)
+  "testflight" (and (has ($d.testflightTag | default "appleapp") $tags) (gt (len ($appstore.builds | default list)) 0))
   "commands" ($p.commands | default dict)
 -}}
 {{- $out | toJson -}}

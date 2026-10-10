@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Ship a gate-passed commit to App Store Connect / TestFlight (local mode).
+# Upload a gate-passed commit to TestFlight (local mode): submits the upload-to-testflight workflow.
 #   scripts/release.sh <project> [--dry-run] [--wait]
-# Needs a release candidate: a scan of <project> with appstore.enabled: true whose gate passed
-# (ConfigMap security/release-candidate-<project>). The build runs on the Mac (local/mac-release.sh).
+# Only for projects tagged appleapp with an appstore: { path, builds } block in projects.yaml, and only
+# after a scan whose gate passed (ConfigMap security/release-candidate-<project>).
+# The build runs on the Mac (local/mac-release.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 NS=${NS:-security}
@@ -19,13 +20,13 @@ for a in "$@"; do
 done
 [ -n "$name" ] || { sed -n '2,5p' "$0"; exit 1; }
 
-echo "candidates:"
+echo "TestFlight candidates:"
 kubectl -n "$NS" get configmap -l security-pipeline/release-candidate=true \
   -o custom-columns='NAME:.data.project,COMMIT:.data.commit,FROM:.data.workflow' 2>/dev/null | sed 's/^/  /'
 kubectl -n "$NS" get configmap "release-candidate-$name" >/dev/null 2>&1 \
-  || { echo "no release candidate for $name (appstore.enabled true + a scan whose gate passed)"; exit 1; }
+  || { echo "no TestFlight candidate for $name (tag appleapp + appstore: block + a scan whose gate passed)"; exit 1; }
 
-wf=$(argo submit -n "$NS" --from wftmpl/appstore-release --generate-name "release-$name-" \
+wf=$(argo submit -n "$NS" --from wftmpl/upload-to-testflight --generate-name "testflight-$name-" \
   -p project="$name" -p dry-run="$dry" -o name)
 echo "submitted $wf (dry-run: $dry)"
 echo "logs: kubectl -n $NS logs -l workflows.argoproj.io/workflow=$wf -c main -f     ui: make ui-argo"

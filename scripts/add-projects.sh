@@ -5,7 +5,8 @@
 #   scripts/add-projects.sh --ref develop URL...        # scan a different branch
 # Names are derived from the URL (last path segment, lowercased, dashes). Schedules are
 # staggered 10 min apart starting 03:00 so scans don't all hit the cluster at once.
-# visibility (public|private, becomes a Dependency-Track tag) is looked up with `gh` for GitHub URLs.
+# visibility (public|private, becomes a Dependency-Track tag) is looked up with `gh` for GitHub URLs;
+# repos containing Swift also get tags: [appleapp] (TestFlight needs that plus an appstore: block).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 command -v yq >/dev/null || { echo "yq is required (brew install yq)"; exit 1; }
@@ -38,10 +39,13 @@ for url in "${urls[@]}"; do
     vis=$(gh api "repos/$slug" --jq 'if .private then "private" else "public" end' 2>/dev/null || true) ;;
   esac
   case "$vis" in public|private) ;; *) vis="" ;; esac   # gh prints the error body on 404
+  swift=""
+  [ -n "$vis" ] && gh api "repos/$slug/languages" --jq 'has("Swift")' 2>/dev/null | grep -qx true && swift=1
   NAME="$name" URL="$url" REF="$ref" SCHED="$schedule" \
     yq -i '.projects += [{"name": env(NAME), "repo": env(URL), "ref": env(REF), "schedule": env(SCHED)}]' projects.yaml
   [ -n "$vis" ] && N="$name" VIS="$vis" yq -i '(.projects[] | select(.name == strenv(N))).visibility = strenv(VIS)' projects.yaml
-  echo "added  $name  ($url @ $ref, cron '$schedule'${vis:+, $vis})"
+  [ -n "$swift" ] && N="$name" yq -i '(.projects[] | select(.name == strenv(N))).tags = ["appleapp"]' projects.yaml
+  echo "added  $name  ($url @ $ref, cron '$schedule'${vis:+, $vis}${swift:+, appleapp})"
   added=$((added + 1))
 done
 echo

@@ -31,7 +31,7 @@ flowchart TD
     end
 
     subgraph deploybox["Deploy — ServiceAccount security-deploy"]
-        rc["release-candidate<br/><b>ConfigMap release-candidate-&lt;project&gt;</b><br/>when appstore-enabled<br/>SA security-release<br/><i>alpine/k8s</i>"]
+        rc["release-candidate<br/><b>ConfigMap release-candidate-&lt;project&gt;</b><br/>when testflight (tag appleapp + appstore block)<br/>SA security-release<br/><i>alpine/k8s</i>"]
         deploy["deploy<br/><b>plan.deploy</b> e.g. npx sst deploy --stage &lt;stage&gt;<br/>IRSA deployer role (EKS) or mounted ~/.aws (local)<br/><i>node:22-bookworm</i>"]
     end
 
@@ -53,7 +53,7 @@ flowchart TD
     semgrep -. "Succeeded, Skipped or Failed" .-> gate
 
     gate -- "Succeeded and<br/>detect.deploy-enabled == true" --> deploy
-    gate -- "Succeeded and<br/>appstore-enabled == true" --> rc
+    gate -- "Succeeded and<br/>testflight == true" --> rc
     rc --> archive
     gate -. "Failed" .-> archive
     deploy -- "Succeeded / Failed / Skipped / Omitted" --> archive
@@ -108,16 +108,16 @@ All steps share one `work` PVC (`defaults.workspaceSize`, 10Gi); scanner output 
 the failed gate as expected and would mark the workflow *Succeeded*. `verdict` reads `tasks.gate.status`
 and exits non-zero when it is not `Succeeded`, so a blocked run shows up red.
 
-## App Store release (manual, `appstore-release` WorkflowTemplate, local mode)
+## Upload to TestFlight (manual, `upload-to-testflight` WorkflowTemplate, local mode)
 
 ```mermaid
 flowchart LR
     you([you: scripts/release.sh &lt;name&gt; or Argo UI Submit]) --> check
-    check{"check<br/>ConfigMap release-candidate-&lt;name&gt;<br/>exists, &lt; 7 days, 40-hex commit"} --> ssh
+    check{"check<br/>tag appleapp + appstore block (from git)<br/>ConfigMap release-candidate-&lt;name&gt;<br/>exists, &lt; 7 days, 40-hex commit"} --> ssh
     ssh["build-upload<br/><b>ssh mac-release@192.168.127.254</b><br/>&quot;&lt;name&gt; &lt;commit&gt; &lt;dry-run&gt;&quot;<br/><i>alpine/git</i>"]
     subgraph mac["Mac (host)"]
         fc["local/mac-release.sh<br/>forced command: validate + queue"]
-        worker["LaunchAgent worker (GUI session)<br/>projects.yaml → repo, path, schemes<br/>clone @ commit (must be on ref)<br/>xcodegen → xcodebuild archive<br/>build = ASC max + 1<br/>exportArchive destination=upload"]
+        worker["LaunchAgent worker (GUI session)<br/>projects.yaml → tag appleapp, repo, path, schemes<br/>clone @ commit (must be on ref)<br/>xcodegen → xcodebuild archive<br/>build = ASC max + 1<br/>exportArchive destination=upload"]
         key[/"~/.appstoreconnect<br/>(never leaves the Mac)"/]
     end
     ssh --> fc --> worker

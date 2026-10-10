@@ -27,8 +27,9 @@ projects.yaml ──git push──▶ Argo CD ──▶ one CronWorkflow per rep
   state FAIL (`gate.policy: block`; approve or suppress a violation in the D-Track UI to let it pass).
 - **EPSS**: every run stores the top findings by exploit probability (`epss.json`, `epssMax` in
   `summary.json`); `scripts/status.sh` lists max EPSS per project.
-- **App Store**: projects with `appstore.enabled` become release candidates when the gate passes;
-  `scripts/release.sh <name>` builds and uploads them to TestFlight on your Mac (local mode).
+- **TestFlight**: repos with Swift are tagged `appleapp`. With an `appstore:` block (Xcode project +
+  schemes) a gate-passed scan becomes a TestFlight candidate; the `upload-to-testflight` workflow
+  (`scripts/release.sh <name>`) builds and uploads it on your Mac (local mode).
 - **Reports** (SBOMs, trivy/semgrep/gitleaks JSON+SARIF, build/deploy logs, summary.json) land in
   S3 under `security/<project>/<date>/<run>/`.
 
@@ -170,11 +171,13 @@ Xcode needs macOS, so releases are built on the Mac, not in the cluster:
 1. `local/mac-release-setup.sh` once: an SSH key that may only run `local/mac-release.sh`
    (forced command, localhost only), a LaunchAgent worker that builds in your login session
    (keychain + gh), and the cluster secret `mac-release-ssh`. Needs Remote Login turned on.
-2. In `projects.yaml` set `appstore.enabled: true` for the app (`path` = XcodeGen `project.yml`,
+2. The app needs `tags: [appleapp]` (set for every repo containing Swift; `add-projects.sh` does it
+   for new ones) and an `appstore:` block in `projects.yaml` (`path` = XcodeGen `project.yml`,
    `.xcodeproj` or `.xcworkspace`; `builds` = scheme + platform ios|macos|catalyst). Commit + push.
 3. Scan it. If every gate passes, the ConfigMap `release-candidate-<name>` records the commit.
-4. Approve by starting the release: `scripts/release.sh <name> --dry-run` (archive + export only),
-   then `scripts/release.sh <name>` (upload), or Argo UI → Workflow Templates → `appstore-release`.
+4. Approve by starting the upload: `scripts/release.sh <name> --dry-run` (archive + export only),
+   then `scripts/release.sh <name>` (upload), or Argo UI → Workflow Templates → `upload-to-testflight`.
+   Projects without the tag are refused, both in the cluster and on the Mac.
 
 The Mac re-reads repo/path/schemes from its own checkout of `projects.yaml`, checks the commit is
 on the configured branch, sets the build number to App Store Connect's highest + 1 (no commit back

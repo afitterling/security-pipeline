@@ -35,8 +35,9 @@ IAM role (iam.tf). Scanners use `security-scan` → S3-only role. Keep that spli
   from `visibility:` in `projects.yaml`.
 - Gate = trivy counts + gitleaks + Dependency-Track policy violations (`dtrack-policy` task, FAIL
   blocks unless approved in D-Track; starter set in `policies/dependency-track/policies.json`).
-- App Store releases (local mode): `appstore:` in `projects.yaml` → `release-candidate-<name>`
-  ConfigMap (SA `security-release`, never the scanner SA) → `appstore-release` WorkflowTemplate →
+- TestFlight (local mode): tag `appleapp` (repos with Swift) + `appstore:` block in `projects.yaml` →
+  `release-candidate-<name>` ConfigMap (SA `security-release`, never the scanner SA) →
+  `upload-to-testflight` WorkflowTemplate (refuses untagged projects) →
   SSH forced command `local/mac-release.sh` → LaunchAgent worker builds/uploads on the Mac. The
   App Store key stays in `~/.appstoreconnect`; the cluster only gets the restricted SSH key.
 - `Makefile` — thin wrappers; run `make help`.

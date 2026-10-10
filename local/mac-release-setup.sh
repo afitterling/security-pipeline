@@ -68,5 +68,5 @@ helm upgrade security-pipeline-root argocd/bootstrap -n argocd --reuse-values \
   --set local.mac.host="$HOST_IP" --set local.mac.user="$USER" >/dev/null
 echo "root app: appstore.macUser=$USER macHost=$HOST_IP (Argo CD re-syncs security-scans)"
 echo
-echo "Next: set appstore.enabled: true for one app in projects.yaml, commit + push, scan it,"
+echo "Next: an app tagged appleapp with an appstore: block in projects.yaml: scan it (gate must pass),"
 echo "then: scripts/release.sh <name> --dry-run"

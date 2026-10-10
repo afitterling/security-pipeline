@@ -23,7 +23,7 @@ spec:
         value: "10"
       - name: gate-policy       # block | report | off  (Dependency-Track policy violations)
         value: block
-      - name: appstore-enabled  # "true" → a gate-passed run becomes the App Store release candidate
+      - name: testflight        # "true" (tag appleapp + appstore: block) → gate-passed run = TestFlight candidate
         value: "false"
       - name: tags              # comma-separated Dependency-Track project tags (visibility + tags:)
         value: ""
@@ -99,7 +99,7 @@ spec:
           - name: release-candidate
             template: release-candidate
             depends: "gate.Succeeded"
-            when: "{{ "{{" }}workflow.parameters.appstore-enabled{{ "}}" }} == true"
+            when: "{{ "{{" }}workflow.parameters.testflight{{ "}}" }} == true"
           - name: deploy
             template: deploy
             depends: "gate.Succeeded"
@@ -481,7 +481,7 @@ spec:
 
     # ---------------------------------------------------------------- release candidate
     # Gate passed and the project ships to the App Store: remember this commit. The release itself is
-    # a separate, manually started workflow (appstore-release) so a pending approval never blocks the
+    # a separate, manually started workflow (upload-to-testflight) so a pending approval never blocks the
     # one-at-a-time scan queue. Own SA: the scanner SA (which runs repo code) cannot write candidates.
     - name: release-candidate
       serviceAccountName: {{ .Values.serviceAccount.release }}
@@ -497,7 +497,7 @@ spec:
               --from-file=summary.json=/work/out/summary.json \
               | kubectl label --local -f - -o yaml app.kubernetes.io/part-of=security-pipeline security-pipeline/release-candidate=true \
               | kubectl apply -f -
-            echo "release candidate: $PROJECT @ $(cat /work/out/commit.txt) — start it with scripts/release.sh $PROJECT"
+            echo "TestFlight candidate: $PROJECT @ $(cat /work/out/commit.txt) — upload with scripts/release.sh $PROJECT"
         env:
           - { name: PROJECT, value: "{{ "{{" }}workflow.parameters.project{{ "}}" }}" }
           - { name: REF, value: "{{ "{{" }}workflow.parameters.ref{{ "}}" }}" }
