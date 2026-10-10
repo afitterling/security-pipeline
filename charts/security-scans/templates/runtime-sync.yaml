@@ -117,7 +117,7 @@ metadata:
     app.kubernetes.io/part-of: security-pipeline
     security-pipeline/project: runtime
 spec:
-  schedule: {{ .Values.runtime.schedule | quote }}
+  schedules: [{{ .Values.runtime.schedule | quote }}]
   timezone: {{ .Values.defaults.timezone | quote }}
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3

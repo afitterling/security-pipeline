@@ -15,7 +15,7 @@ metadata:
   annotations:
     security-pipeline/repo: {{ $p.repo | quote }}
 spec:
-  schedule: {{ $p.schedule | quote }}
+  schedules: [{{ $p.schedule | quote }}]   # Argo Workflows >= 3.6 / 4.x: list, `schedule` removed from the CRD
   timezone: {{ $defaults.timezone | quote }}
   concurrencyPolicy: Forbid
   suspend: {{ not $p.enabled }}
