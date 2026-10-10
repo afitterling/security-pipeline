@@ -90,6 +90,14 @@ spec:
           - name: archive
             template: archive
             depends: "deploy.Succeeded || deploy.Failed || deploy.Skipped || deploy.Omitted || gate.Failed"
+          # Referencing gate.Failed above makes Argo treat a gate failure as "expected", so the
+          # workflow would end Succeeded. This last task turns a failed gate into a failed workflow.
+          - name: verdict
+            template: verdict
+            depends: "archive"
+            arguments:
+              parameters:
+                - { name: gate-status, value: "{{ "{{" }}tasks.gate.status{{ "}}" }}" }
 
     # ---------------------------------------------------------------- source
     - name: clone
@@ -334,6 +342,15 @@ spec:
       activeDeadlineSeconds: 3600
 
     # ---------------------------------------------------------------- archive → S3
+    - name: verdict
+      inputs:
+        parameters: [{ name: gate-status }]
+      container:
+        image: {{ .Values.images.k8s }}
+        command: [sh, -ec]
+        args: ['[ "{{ "{{" }}inputs.parameters.gate-status{{ "}}" }}" = Succeeded ] && echo "gate passed" || { echo "gate {{ "{{" }}inputs.parameters.gate-status{{ "}}" }}: workflow failed"; exit 1; }']
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+
     - name: archive
       container:
         image: {{ .Values.images.curl }}

@@ -56,7 +56,6 @@ images:
   gitleaks: docker.io/zricethezav/gitleaks:v8.27.2
   semgrep: docker.io/semgrep/semgrep:1.127.1
   curl: docker.io/curlimages/curl:8.14.1
-  jq: ghcr.io/jqlang/jq:1.8.0
   runner: docker.io/library/node:22-bookworm   # detect / build / test / deploy (node 22, python3, git)
   k8s: docker.io/alpine/k8s:1.33.3             # kubectl + jq + curl for the runtime sync
 
