@@ -19,12 +19,10 @@ spec:
             {{- else }}
             {{- toYaml .Values.dependencyTrack.apiServer.resources | nindent 12 }}
             {{- end }}
-          extraEnv:
-            # Analyzers that need no API key; OSS Index / Snyk need secrets (add via ESO later)
-            - name: ALPINE_METRICS_ENABLED
-              value: "true"
-            - name: ALPINE_DATA_DIRECTORY
-              value: /data
+          # Chart 0.x already sets ALPINE_METRICS_ENABLED and mounts /data; re-adding them here
+          # makes the StatefulSet patch fail with "duplicate entries for key". Analyzers that need
+          # API keys (OSS Index, Snyk) go in via ESO later.
+          extraEnv: []
         frontend:
           apiBaseUrl: {{ .Values.dependencyTrack.apiBaseUrl }}
           resources:
