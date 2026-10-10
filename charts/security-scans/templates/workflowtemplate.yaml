@@ -120,6 +120,7 @@ spec:
         args:
           - |
             mkdir -p /work/out
+            rm -rf /work/src   # retry after a failed attempt
             if [ -n "$GIT_TOKEN" ]; then
               host=$(echo "{{ "{{" }}workflow.parameters.repo{{ "}}" }}" | sed -E 's#https?://([^/]+)/.*#\1#')
               printf 'https://%s:%s@%s\n' "$GIT_USERNAME" "$GIT_TOKEN" "$host" > /tmp/.git-credentials
@@ -138,6 +139,11 @@ spec:
             valueFrom: { secretKeyRef: { name: git-credentials, key: token, optional: true } }
         volumeMounts: [{ name: work, mountPath: /work }]
         resources: {{ toYaml .Values.resources.small | nindent 10 }}
+      # Transient on a busy local cluster: DNS (CoreDNS), API timeouts, Dependency-Track restarts
+      retryStrategy:
+        limit: "2"
+        retryPolicy: Always
+        backoff: { duration: "30s", factor: "2" }
 
     # Inspect the repo: sst.config.ts → npx sst deploy, package.json → npm, python, terraform…
     - name: detect
@@ -276,6 +282,10 @@ spec:
             valueFrom: { secretKeyRef: { name: dtrack-api, key: apiKey, optional: true } }
         volumeMounts: [{ name: work, mountPath: /work }]
         resources: {{ toYaml .Values.resources.small | nindent 10 }}
+      retryStrategy:
+        limit: "3"
+        retryPolicy: Always
+        backoff: { duration: "60s", factor: "2" }   # Dependency-Track may be restarting
 
     # Tag the Dependency-Track project (public/private + tags: from projects.yaml), wait for it to
     # finish analysing the uploaded BOM, then collect policy violations and EPSS. Always exits 0; on
@@ -298,8 +308,22 @@ spec:
               sleep 5; waited=$((waited + 5))
             done
             echo "BOM analysed after ${waited}s"
-            uuid=$(api -G "$DTRACK_URL/api/v1/project/lookup" --data-urlencode "name=$PROJECT" \
-              --data-urlencode "version=$VERSION" | jq -r '.uuid // empty') || bail "project lookup failed"
+            lookup() { api -G "$DTRACK_URL/api/v1/project/lookup" --data-urlencode "name=$PROJECT" \
+              --data-urlencode "version=$VERSION" 2>/dev/null | jq -r '.uuid // empty' 2>/dev/null || true; }
+            uuid=$(lookup)
+            if [ -z "$uuid" ]; then
+              # autoCreate happens while the BOM is processed; a Dependency-Track restart loses that
+              # queued event. Upload once more and wait again.
+              echo "project $PROJECT/$VERSION missing after analysis: uploading the BOM again"
+              token=$(api -X POST "$DTRACK_URL/api/v1/bom" -F autoCreate=true -F "projectName=$PROJECT" \
+                -F "projectVersion=$VERSION" -F "bom=@$out/sbom.cdx.json" | jq -r '.token // empty') || bail "re-upload failed"
+              waited=0
+              while [ "$(api "$DTRACK_URL/api/v1/event/token/$token" | jq -r .processing)" != false ]; do
+                [ $waited -ge "$TIMEOUT" ] && bail "BOM analysis not finished after ${TIMEOUT}s (re-upload)"
+                sleep 5; waited=$((waited + 5))
+              done
+              for i in 1 2 3 4 5 6; do uuid=$(lookup); [ -n "$uuid" ] && break; sleep 10; done
+            fi
             [ -n "$uuid" ] || bail "project $PROJECT/$VERSION not found"
             # Tags: keep tags added in the UI, add ours; public/private are exclusive
             if [ -n "$TAGS" ]; then
