@@ -1,0 +1,52 @@
+# Set by Terraform (helm_release.root_app) or local/up.sh. Defaults here only make `helm lint` happy.
+repoURL: https://github.com/example/security-pipeline.git
+targetRevision: main
+
+# aws   = EKS: IRSA, S3 reports bucket, External Secrets ← Secrets Manager
+# local = kind/k3s: no IAM, MinIO reports bucket, plain Kubernetes secrets (local/up.sh)
+mode: aws
+
+local:
+  minio:
+    namespace: minio
+    bucket: reports
+    storage: 20Gi
+    secret: minio-credentials   # keys rootUser/rootPassword, created by local/up.sh in minio, argo, security
+
+aws:
+  region: eu-central-1
+  reportsBucket: security-pipeline-reports-000000
+  roles:
+    argoWorkflows: arn:aws:iam::000000000000:role/security-pipeline-argo-workflows
+    externalSecrets: arn:aws:iam::000000000000:role/security-pipeline-external-secrets
+    deployer: arn:aws:iam::000000000000:role/security-pipeline-deployer
+
+# Chart versions — bump via PR so Argo CD shows the diff.
+versions:
+  externalSecrets: "2.x"      # https://charts.external-secrets.io
+  argoWorkflows: "1.x"        # https://argoproj.github.io/argo-helm
+  dependencyTrack: "0.x"      # https://dependencytrack.github.io/helm-charts (app 4.13.x)
+  gatekeeper: "3.x"           # https://open-policy-agent.github.io/gatekeeper/charts
+  trivyOperator: "0.x"        # https://aquasecurity.github.io/helm-charts
+
+trivyOperator:
+  namespace: trivy-system
+
+dependencyTrack:
+  namespace: dependency-track
+  # In-cluster PostgreSQL from the chart's dependency. For production move to RDS and
+  # set postgresql.enabled=false + apiServer database env (see README).
+  postgresql:
+    enabled: true
+    storage: 20Gi
+  apiServer:
+    storage: 10Gi
+    resources:
+      requests: { cpu: "500m", memory: "3Gi" }
+      limits: { memory: "5Gi" }
+  # Browser-reachable API URL (port-forward default). Change when adding an ingress.
+  apiBaseUrl: http://localhost:8081
+
+argoWorkflows:
+  namespace: argo
+  workflowNamespace: security

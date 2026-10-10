@@ -1,0 +1,44 @@
+# Repositories handled by the pipeline.
+# Add entries by hand or with:  scripts/add-projects.sh <git-url> [<git-url> ...]
+# Every entry becomes one Argo CronWorkflow (security/scan-<name>) and one
+# Dependency-Track project (<name> / <version>) on the first upload.
+#
+# What runs is detected from the repo (see charts/security-scans/files/detect.js):
+#   sst.config.ts            -> npm ci, build/test if scripted, then `npx sst deploy --stage <stage>`
+#   package.json             -> npm ci, build/test if scripted (no deploy)
+#   pyproject/requirements   -> venv + pip, pytest if tests/ exists
+#   *.tf                     -> terraform validate
+#   Package.swift / xcodeproj-> scan only (needs macOS to build)
+# Deploy only happens when the security gate passed. Override detection per project with
+# `commands:` or inside the repo with `.security-pipeline.json` ({"commands": {"deploy": "..."}}).
+#
+# Fields:
+#   name      k8s-safe identifier (lowercase, dashes)      [required]
+#   repo      clone URL (https; token comes from the git secret) [required]
+#   ref       branch / tag                                 default: main
+#   version   Dependency-Track project version             default: <ref>
+#   schedule  cron (Europe/Berlin)                         default: daily 03:00, staggered
+#   enabled   false keeps the entry but suspends the cron  default: true
+#   gate      { critical: N, high: N }  fail (and block deploy) when exceeded
+#   semgrep   run semgrep (slower)                         default: true
+#   deploy    { enabled: bool, stage: <sst stage> }        default: enabled, stage dev
+#   commands  { install, build, test, deploy }  explicit commands, override detection
+#
+projects:
+  - name: example-sst-app
+    repo: https://github.com/<you>/example-sst-app.git
+    ref: main
+    schedule: "0 3 * * *"
+    enabled: false
+    deploy:
+      stage: dev
+
+  - name: example-custom
+    repo: https://github.com/<you>/example-custom.git
+    enabled: false
+    deploy:
+      enabled: true
+    commands:
+      install: npm ci
+      test: npm test
+      deploy: npx sst deploy --stage alex1

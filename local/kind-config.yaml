@@ -1,0 +1,13 @@
+# kind cluster for running the whole pipeline on a laptop.
+# Needs Docker Desktop / OrbStack / colima with ~6 CPU and ~12 GB RAM assigned.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: security-pipeline
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "workload=general"

@@ -1,0 +1,74 @@
+{{ include "bootstrap.app" (dict "name" "argo-workflows" "wave" 1) }}
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-workflows
+    targetRevision: {{ .Values.versions.argoWorkflows | quote }}
+    helm:
+      releaseName: argo-workflows
+      valuesObject:
+        singleNamespace: false
+        # Default artifact repository: every workflow's output artifacts + archived logs
+        artifactRepository:
+          archiveLogs: true
+          s3:
+            {{- if eq .Values.mode "aws" }}
+            bucket: {{ .Values.aws.reportsBucket }}
+            region: {{ .Values.aws.region }}
+            endpoint: s3.amazonaws.com
+            useSDKCreds: true   # IRSA on the workflow / controller service accounts
+            {{- else }}
+            bucket: {{ .Values.local.minio.bucket }}
+            endpoint: minio.{{ .Values.local.minio.namespace }}.svc.cluster.local:9000
+            insecure: true
+            accessKeySecret: { name: {{ .Values.local.minio.secret }}, key: rootUser }
+            secretKeySecret: { name: {{ .Values.local.minio.secret }}, key: rootPassword }
+            {{- end }}
+            keyFormat: "{{ "{{" }}workflow.namespace{{ "}}" }}/{{ "{{" }}workflow.parameters.project{{ "}}" }}/{{ "{{" }}workflow.creationTimestamp.Y{{ "}}" }}-{{ "{{" }}workflow.creationTimestamp.m{{ "}}" }}-{{ "{{" }}workflow.creationTimestamp.d{{ "}}" }}/{{ "{{" }}workflow.name{{ "}}" }}/{{ "{{" }}pod.name{{ "}}" }}"
+        controller:
+          workflowNamespaces:
+            - {{ .Values.argoWorkflows.workflowNamespace }}
+          serviceAccount:
+            name: argo-workflows-controller
+            {{- if eq .Values.mode "aws" }}
+            annotations:
+              eks.amazonaws.com/role-arn: {{ .Values.aws.roles.argoWorkflows }}
+            {{- end }}
+          # The injected init/wait sidecars must satisfy the Gatekeeper limits/escalation policies
+          executor:
+            resources:
+              requests: { cpu: 50m, memory: 64Mi }
+              limits: { memory: 256Mi }
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: { drop: [ALL] }
+          workflowDefaults:
+            spec:
+              ttlStrategy:
+                secondsAfterCompletion: 604800   # keep 7 days in-cluster; the bucket keeps the rest
+              podGC:
+                strategy: OnWorkflowSuccess
+              activeDeadlineSeconds: 5400
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          metricsConfig:
+            enabled: true
+        server:
+          enabled: true
+          # UI reached via port-forward only; no login. Switch to 'sso' before exposing it.
+          authModes: ["server"]
+          serviceAccount:
+            name: argo-workflows-server
+            {{- if eq .Values.mode "aws" }}
+            annotations:
+              eks.amazonaws.com/role-arn: {{ .Values.aws.roles.argoWorkflows }}
+            {{- end }}
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.argoWorkflows.namespace }}
+  {{ include "bootstrap.syncPolicy" . | nindent 2 }}

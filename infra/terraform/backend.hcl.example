@@ -1,0 +1,6 @@
+# cp backend.hcl.example backend.hcl  (gitignored) and adjust
+bucket         = "sp33c-terraform-state"
+key            = "security-pipeline/eu-central-1/terraform.tfstate"
+region         = "eu-central-1"
+dynamodb_table = "terraform-locks"
+encrypt        = true

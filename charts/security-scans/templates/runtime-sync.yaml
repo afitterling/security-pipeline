@@ -1,0 +1,131 @@
+{{- if .Values.runtime.enabled }}
+# Runtime detection pipe: Trivy Operator SBOMs → Dependency-Track, plus Trivy Operator
+# vulnerability reports and Gatekeeper audit violations → summary JSON → reports bucket.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: security-scan-runtime-reader
+rules:
+  - apiGroups: ["aquasecurity.github.io"]
+    resources: ["sbomreports", "vulnerabilityreports", "clustervulnerabilityreports", "exposedsecretreports", "configauditreports"]
+    verbs: ["get", "list"]
+  - apiGroups: ["constraints.gatekeeper.sh"]
+    resources: ["*"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: security-scan-runtime-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: security-scan-runtime-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: runtime-sync
+  labels:
+    app.kubernetes.io/part-of: security-pipeline
+spec:
+  entrypoint: sync
+  serviceAccountName: {{ .Values.serviceAccount.name }}
+  arguments:
+    parameters:
+      - name: project
+        value: runtime
+      - name: gate-critical          # fail when any running image has more CRITICALs than this ("" = report only)
+        value: {{ .Values.runtime.gate.critical | quote }}
+  podMetadata:
+    labels:
+      app.kubernetes.io/part-of: security-pipeline
+      security-pipeline/project: runtime
+  templates:
+    - name: sync
+      container:
+        image: {{ .Values.images.k8s }}
+        command: [bash, -ec]
+        args:
+          - |
+            out=/work/out; mkdir -p $out
+            echo "== SBOMs: Trivy Operator → Dependency-Track"
+            kubectl get sbomreports -A -o json > $out/sbomreports.json
+            n=0
+            for key in $(jq -r '.items[] | "\(.report.registry.server)/\(.report.artifact.repository)@\(.report.artifact.tag // .report.artifact.digest)"' $out/sbomreports.json | sort -u); do
+              image="${key%@*}"; version="${key##*@}"
+              jq --arg k "$key" 'first(.items[] | select("\(.report.registry.server)/\(.report.artifact.repository)@\(.report.artifact.tag // .report.artifact.digest)" == $k)) | .report.components' \
+                $out/sbomreports.json > /tmp/bom.json
+              [ "$(jq -r '.bomFormat // empty' /tmp/bom.json)" = "CycloneDX" ] || { echo "skip $key (no CycloneDX bom)"; continue; }
+              if [ -n "$DTRACK_API_KEY" ]; then
+                curl -sS --fail-with-body -o /dev/null -X POST "$DTRACK_URL/api/v1/bom" -H "X-Api-Key: $DTRACK_API_KEY" \
+                  -F autoCreate=true -F "projectName=runtime/$image" -F "projectVersion=$version" -F "bom=@/tmp/bom.json" \
+                  && n=$((n+1)) || echo "upload failed for $key"
+              fi
+            done
+            echo "uploaded $n runtime SBOMs"
+
+            echo "== Vulnerabilities of running images"
+            kubectl get vulnerabilityreports -A -o json \
+              | jq '[.items[] | {namespace:.metadata.namespace, workload:(.metadata.labels["trivy-operator.resource.kind"] + "/" + .metadata.labels["trivy-operator.resource.name"]), image:"\(.report.registry.server)/\(.report.artifact.repository):\(.report.artifact.tag // .report.artifact.digest)", critical:.report.summary.criticalCount, high:.report.summary.highCount, medium:.report.summary.mediumCount}] | sort_by(-.critical, -.high)' \
+              > $out/runtime-vulns.json
+            jq -r '.[] | "\(.critical)\t\(.high)\t\(.namespace)\t\(.image)"' $out/runtime-vulns.json | sort -rn | head -30 | awk 'BEGIN{print "CRIT\tHIGH\tNS\tIMAGE"}{print}'
+
+            echo "== Gatekeeper audit violations"
+            kubectl get constraints -o json \
+              | jq '[.items[] | {constraint:.metadata.name, kind:.kind, action:.spec.enforcementAction, total:(.status.totalViolations // 0), violations:[(.status.violations // [])[] | {namespace, kind, name, message}]}]' \
+              > $out/runtime-policy.json
+            jq -r '.[] | "\(.total)\t\(.action)\t\(.constraint)"' $out/runtime-policy.json | awk 'BEGIN{print "VIOL\tACTION\tCONSTRAINT"}{print}'
+
+            jq -n --slurpfile v $out/runtime-vulns.json --slurpfile p $out/runtime-policy.json \
+              '{images: ($v[0]|length), critical: ([$v[0][].critical]|add // 0), high: ([$v[0][].high]|add // 0), policyViolations: ([$p[0][].total]|add // 0), denyViolations: ([$p[0][] | select(.action=="deny") | .total]|add // 0)}' \
+              | tee $out/summary.json
+
+            gate="{{ "{{" }}workflow.parameters.gate-critical{{ "}}" }}"
+            if [ -n "$gate" ]; then
+              worst=$(jq '[.[].critical] | max // 0' $out/runtime-vulns.json)
+              [ "$worst" -le "$gate" ] || { echo "GATE: an image has $worst CRITICAL vulns (> $gate)"; exit 1; }
+            fi
+        env:
+          - name: DTRACK_URL
+            value: {{ .Values.dependencyTrack.url }}
+          - name: DTRACK_API_KEY
+            valueFrom: { secretKeyRef: { name: dtrack-api, key: apiKey, optional: true } }
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+      volumes:
+        - name: work
+          emptyDir: {}
+      outputs:
+        artifacts:
+          - name: reports
+            path: /work/out
+            archive: { none: {} }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: runtime-sync
+  labels:
+    app.kubernetes.io/part-of: security-pipeline
+    security-pipeline/project: runtime
+spec:
+  schedule: {{ .Values.runtime.schedule | quote }}
+  timezone: {{ .Values.defaults.timezone | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  workflowMetadata:
+    labels:
+      security-pipeline/project: runtime
+  workflowSpec:
+    workflowTemplateRef:
+      name: runtime-sync
+{{- end }}

@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  {{- if eq .Values.mode "aws" }}
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .Values.aws.roles.argoWorkflows }}
+  {{- end }}
+---
+# Minimal RBAC the Argo executor needs (patch its own pod / workflowtaskresults)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.serviceAccount.name }}-executor
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtaskresults"]
+    verbs: ["create", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.name }}-executor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.serviceAccount.name }}-executor
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Release.Namespace }}
+---
+# Deploy step identity: separate SA so scanners never hold the deployer role
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.deploy }}
+  {{- if eq .Values.mode "aws" }}
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .Values.aws.roles.deployer }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.deploy }}-executor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.serviceAccount.name }}-executor
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.deploy }}
+    namespace: {{ .Release.Namespace }}
+---
+# Repo inspection script (files/detect.js), mounted into the detect step
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-scan-detect
+data:
+  detect.js: |
+{{ .Files.Get "files/detect.js" | indent 4 }}
+---
+# Resolved project list, handy for scripts/status.sh and the UI
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-scans-projects
+data:
+  projects.json: |
+    {{- $list := list }}
+    {{- range .Values.projects }}
+    {{- $list = append $list (include "scans.project" (dict "defaults" $.Values.defaults "project" .) | fromJson) }}
+    {{- end }}
+    {{ $list | toJson }}

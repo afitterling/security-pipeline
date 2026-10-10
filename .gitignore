@@ -1,0 +1,18 @@
+# terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+backend.hcl
+terraform.tfvars
+*.auto.tfvars
+# secrets / local
+.env
+.env.*
+*.pem
+kubeconfig*
+# helm
+charts/**/charts/
+*.tgz
+.DS_Store

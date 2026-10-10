@@ -1,0 +1,348 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: security-scan
+  labels:
+    app.kubernetes.io/part-of: security-pipeline
+spec:
+  entrypoint: pipeline
+  serviceAccountName: {{ .Values.serviceAccount.name }}
+  arguments:
+    parameters:
+      - name: project
+      - name: repo
+      - name: ref
+        value: main
+      - name: version
+        value: main
+      - name: semgrep
+        value: "true"
+      - name: gate-critical
+        value: "0"
+      - name: gate-high
+        value: "10"
+      - name: deploy-enabled
+        value: "true"
+      - name: stage
+        value: dev
+      - name: commands          # JSON {install,build,test,deploy} overriding detection
+        value: "{}"
+  volumeClaimTemplates:
+    - metadata:
+        name: work
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: {{ .Values.defaults.workspaceSize }}
+  volumes:
+    - name: detect
+      configMap:
+        name: security-scan-detect
+        defaultMode: 0555
+  podMetadata:
+    labels:
+      app.kubernetes.io/part-of: security-pipeline
+      security-pipeline/project: "{{ "{{" }}workflow.parameters.project{{ "}}" }}"
+  securityContext:
+    fsGroup: 1000
+  templates:
+    # ---------------------------------------------------------------- DAG
+    #   clone ─┬─ detect ── build-test ─┐
+    #          ├─ sbom ── upload-bom ───┤
+    #          ├─ trivy ────────────────┼─ gate ── deploy ── archive
+    #          ├─ gitleaks ─────────────┤
+    #          └─ semgrep (optional) ───┘
+    - name: pipeline
+      dag:
+        tasks:
+          - name: clone
+            template: clone
+          - name: detect
+            template: detect
+            depends: clone
+          - name: build-test
+            template: build-test
+            depends: detect
+          - name: sbom
+            template: sbom
+            depends: clone
+          - name: trivy
+            template: trivy
+            depends: clone
+          - name: gitleaks
+            template: gitleaks
+            depends: clone
+          - name: semgrep
+            template: semgrep
+            depends: clone
+            when: "{{ "{{" }}workflow.parameters.semgrep{{ "}}" }} == true"
+          - name: upload-bom
+            template: upload-bom
+            depends: sbom
+          - name: gate
+            template: gate
+            depends: "trivy && gitleaks && upload-bom && build-test && (semgrep.Succeeded || semgrep.Skipped || semgrep.Failed)"
+          - name: deploy
+            template: deploy
+            depends: "gate.Succeeded"
+            when: "{{ "{{" }}tasks.detect.outputs.parameters.deploy-enabled{{ "}}" }} == true"
+          - name: archive
+            template: archive
+            depends: "deploy.Succeeded || deploy.Failed || deploy.Skipped || deploy.Omitted || gate.Failed"
+
+    # ---------------------------------------------------------------- source
+    - name: clone
+      container:
+        image: {{ .Values.images.git }}
+        command: [sh, -ec]
+        args:
+          - |
+            mkdir -p /work/out
+            if [ -n "$GIT_TOKEN" ]; then
+              host=$(echo "{{ "{{" }}workflow.parameters.repo{{ "}}" }}" | sed -E 's#https?://([^/]+)/.*#\1#')
+              printf 'https://%s:%s@%s\n' "$GIT_USERNAME" "$GIT_TOKEN" "$host" > /tmp/.git-credentials
+              git config --global credential.helper 'store --file=/tmp/.git-credentials'
+            fi
+            git clone --depth 1 --branch "{{ "{{" }}workflow.parameters.ref{{ "}}" }}" \
+              "{{ "{{" }}workflow.parameters.repo{{ "}}" }}" /work/src
+            cd /work/src
+            git rev-parse HEAD > /work/out/commit.txt
+            chmod -R a+rwX /work
+            echo "commit $(cat /work/out/commit.txt)"
+        env:
+          - name: GIT_USERNAME
+            valueFrom: { secretKeyRef: { name: git-credentials, key: username, optional: true } }
+          - name: GIT_TOKEN
+            valueFrom: { secretKeyRef: { name: git-credentials, key: token, optional: true } }
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+
+    # Inspect the repo: sst.config.ts → npx sst deploy, package.json → npm, python, terraform…
+    - name: detect
+      container:
+        image: {{ .Values.images.runner }}
+        command: [node, /detect/detect.js]
+        env:
+          - name: DEPLOY_STAGE
+            value: "{{ "{{" }}workflow.parameters.stage{{ "}}" }}"
+          - name: DEPLOY_ENABLED
+            value: "{{ "{{" }}workflow.parameters.deploy-enabled{{ "}}" }}"
+          - name: COMMANDS_JSON
+            value: "{{ "{{" }}workflow.parameters.commands{{ "}}" }}"
+        volumeMounts:
+          - { name: work, mountPath: /work }
+          - { name: detect, mountPath: /detect }
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+      outputs:
+        parameters:
+          - name: plan
+            valueFrom: { path: /work/out/plan.json }
+          - name: deploy-enabled
+            valueFrom: { path: /work/out/deploy-enabled.txt }
+
+    - name: build-test
+      container:
+        image: {{ .Values.images.runner }}
+        command: [bash, -ec]
+        args:
+          - |
+            cd /work/src
+            plan=/work/out/plan.json
+            get() { node -e "process.stdout.write(require('$plan').$1 || '')"; }
+            echo "kind: $(get kind)"
+            for step in install build test; do
+              cmd=$(get $step)
+              if [ -z "$cmd" ]; then echo "--- $step: (none)"; continue; fi
+              echo "--- $step: $cmd"
+              bash -ec "$cmd" 2>&1 | tee -a /work/out/build-$step.log
+            done
+        env:
+          - { name: CI, value: "true" }
+          - { name: NO_COLOR, value: "1" }
+          - { name: npm_config_cache, value: /work/.npm }
+          - { name: HOME, value: /work/.home }
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.runner | nindent 10 }}
+      activeDeadlineSeconds: 2400
+
+    # ---------------------------------------------------------------- scanners
+    - name: sbom
+      container:
+        image: {{ .Values.images.syft }}
+        args:
+          - scan
+          - dir:/work/src
+          - --source-name={{ "{{" }}workflow.parameters.project{{ "}}" }}
+          - --source-version={{ "{{" }}workflow.parameters.version{{ "}}" }}
+          - -o
+          - cyclonedx-json=/work/out/sbom.cdx.json
+          - -o
+          - spdx-json=/work/out/sbom.spdx.json
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.scanner | nindent 10 }}
+
+    - name: trivy
+      container:
+        image: {{ .Values.images.trivy }}
+        command: [sh, -ec]
+        args:
+          - |
+            trivy fs --scanners vuln,secret,misconfig --format json \
+              --output /work/out/trivy.json --exit-code 0 /work/src
+            trivy fs --scanners vuln,secret,misconfig --format sarif \
+              --output /work/out/trivy.sarif --exit-code 0 --skip-db-update /work/src
+            trivy fs --scanners vuln --severity HIGH,CRITICAL --skip-db-update /work/src || true
+        env:
+          - name: TRIVY_CACHE_DIR
+            value: /work/.trivy
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.scanner | nindent 10 }}
+
+    - name: gitleaks
+      container:
+        image: {{ .Values.images.gitleaks }}
+        command: [sh, -ec]
+        args:
+          - |
+            gitleaks detect --source /work/src --no-git --redact \
+              --report-format json --report-path /work/out/gitleaks.json --exit-code 0
+            n=$(grep -c '"RuleID"' /work/out/gitleaks.json || true)
+            echo "gitleaks findings: $n"
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+
+    - name: semgrep
+      container:
+        image: {{ .Values.images.semgrep }}
+        command: [sh, -ec]
+        args:
+          - |
+            semgrep scan --config p/default --config p/secrets --metrics=off \
+              --json --output /work/out/semgrep.json --sarif-output /work/out/semgrep.sarif \
+              --error-on-findings=false /work/src || true
+            echo "semgrep done"
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.scanner | nindent 10 }}
+      activeDeadlineSeconds: 1800
+
+    - name: upload-bom
+      container:
+        image: {{ .Values.images.curl }}
+        command: [sh, -ec]
+        args:
+          - |
+            if [ -z "$DTRACK_API_KEY" ]; then
+              echo "dtrack-api secret is empty — run scripts/dtrack-bootstrap.sh"; exit 1
+            fi
+            resp=$(curl -sS --fail-with-body -X POST "$DTRACK_URL/api/v1/bom" \
+              -H "X-Api-Key: $DTRACK_API_KEY" \
+              -F "autoCreate=true" \
+              -F "projectName={{ "{{" }}workflow.parameters.project{{ "}}" }}" \
+              -F "projectVersion={{ "{{" }}workflow.parameters.version{{ "}}" }}" \
+              -F "bom=@/work/out/sbom.cdx.json")
+            echo "$resp" > /work/out/dtrack-upload.json
+            echo "upload token: $resp"
+        env:
+          - name: DTRACK_URL
+            value: {{ .Values.dependencyTrack.url }}
+          - name: DTRACK_API_KEY
+            valueFrom: { secretKeyRef: { name: dtrack-api, key: apiKey, optional: true } }
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+
+    # ---------------------------------------------------------------- gate
+    - name: gate
+      container:
+        image: {{ .Values.images.jq }}
+        command: [sh, -ec]
+        args:
+          - |
+            crit=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' /work/out/trivy.json)
+            high=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' /work/out/trivy.json)
+            secrets=$(jq '[.Results[]?.Secrets[]?] | length' /work/out/trivy.json)
+            leaks=$(jq 'length' /work/out/gitleaks.json 2>/dev/null || echo 0)
+            sg=$(jq '.results | length' /work/out/semgrep.json 2>/dev/null || echo 0)
+            jq -n --arg project "{{ "{{" }}workflow.parameters.project{{ "}}" }}" \
+                  --arg commit "$(cat /work/out/commit.txt)" \
+                  --arg kind "$(jq -r .kind /work/out/plan.json)" \
+                  --argjson critical "$crit" --argjson high "$high" \
+                  --argjson trivySecrets "$secrets" --argjson gitleaks "$leaks" --argjson semgrep "$sg" \
+                  '{project:$project, commit:$commit, kind:$kind, critical:$critical, high:$high, trivySecrets:$trivySecrets, gitleaks:$gitleaks, semgrep:$semgrep}' \
+                  | tee /work/out/summary.json
+            fail=0
+            [ "$crit" -gt "{{ "{{" }}workflow.parameters.gate-critical{{ "}}" }}" ] && { echo "GATE: critical $crit > {{ "{{" }}workflow.parameters.gate-critical{{ "}}" }}"; fail=1; }
+            [ "$high" -gt "{{ "{{" }}workflow.parameters.gate-high{{ "}}" }}" ] && { echo "GATE: high $high > {{ "{{" }}workflow.parameters.gate-high{{ "}}" }}"; fail=1; }
+            [ "$leaks" -gt 0 ] && { echo "GATE: $leaks leaked secrets (gitleaks)"; fail=1; }
+            [ "$fail" = 0 ] && echo "GATE: passed — deploy allowed"
+            exit $fail
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+      outputs:
+        parameters:
+          - name: summary
+            valueFrom: { path: /work/out/summary.json }
+
+    # ---------------------------------------------------------------- deploy
+    # Runs the detected/declared deploy command (SST: npx sst deploy --stage <stage>) with the
+    # deployer IRSA role. Profiles pinned in sst.config.ts are mapped onto that same identity.
+    - name: deploy
+      serviceAccountName: {{ .Values.serviceAccount.deploy }}
+      container:
+        image: {{ .Values.images.runner }}
+        command: [bash, -ec]
+        args:
+          - |
+            cd /work/src
+            plan=/work/out/plan.json
+            cmd=$(node -e "process.stdout.write(require('$plan').deploy || '')")
+            [ -n "$cmd" ] || { echo "no deploy command"; exit 0; }
+            if [ -n "${AWS_ROLE_ARN:-}" ]; then
+              # EKS: map profiles pinned in sst.config.ts onto the pod's IRSA identity
+              mkdir -p "$HOME/.aws"
+              for p in $(node -e "console.log((require('$plan').profiles||[]).join(' '))"); do
+                printf '[profile %s]\nrole_arn = %s\nweb_identity_token_file = %s\nregion = %s\n\n' \
+                  "$p" "$AWS_ROLE_ARN" "$AWS_WEB_IDENTITY_TOKEN_FILE" "$AWS_REGION" >> "$HOME/.aws/config"
+                echo "profile '$p' from sst.config.ts mapped to pipeline identity"
+              done
+            else
+              # local: ~/.aws from the developer machine is mounted read-only at $HOME/.aws
+              ls "$HOME/.aws" >/dev/null 2>&1 && echo "using mounted ~/.aws (local mode)" || echo "WARNING: no AWS credentials available"
+            fi
+            echo "--- deploy: $cmd"
+            bash -ec "$cmd" 2>&1 | tee /work/out/deploy.log
+        env:
+          - { name: CI, value: "true" }
+          - { name: NO_COLOR, value: "1" }
+          - { name: AWS_REGION, value: {{ .Values.aws.region }} }
+          - { name: AWS_DEFAULT_REGION, value: {{ .Values.aws.region }} }
+          - { name: npm_config_cache, value: /work/.npm }
+          - { name: HOME, value: /work/.home }
+        volumeMounts:
+          - { name: work, mountPath: /work }
+          {{- if eq .Values.mode "local" }}
+          - { name: aws-credentials, mountPath: /work/.home/.aws, readOnly: true }
+          {{- end }}
+        resources: {{ toYaml .Values.resources.runner | nindent 10 }}
+      {{- if eq .Values.mode "local" }}
+      volumes:
+        - name: aws-credentials
+          secret:
+            secretName: {{ .Values.local.awsCredentialsSecret }}
+            optional: true
+      {{- end }}
+      activeDeadlineSeconds: 3600
+
+    # ---------------------------------------------------------------- archive → S3
+    - name: archive
+      container:
+        image: {{ .Values.images.curl }}
+        command: [sh, -ec]
+        args: ["rm -rf /work/out/.trivy; ls -la /work/out"]
+        volumeMounts: [{ name: work, mountPath: /work }]
+        resources: {{ toYaml .Values.resources.small | nindent 10 }}
+      outputs:
+        artifacts:
+          - name: reports
+            path: /work/out
+            archive: { none: {} }

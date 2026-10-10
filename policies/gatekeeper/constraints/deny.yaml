@@ -1,0 +1,54 @@
+# enforcementAction: deny — blocked at admission, and audited every 60s for pre-existing objects.
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sPSPPrivilegedContainer
+metadata:
+  name: no-privileged-containers
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    excludedNamespaces: ["kube-system", "gatekeeper-system", "local-path-storage"]
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sPSPHostNamespace
+metadata:
+  name: no-host-namespaces
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    excludedNamespaces: ["kube-system", "gatekeeper-system", "local-path-storage"]
+---
+# Scan/deploy pods may only use images from these registries (hard-enforced in `security`)
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sAllowedRepos
+metadata:
+  name: pipeline-allowed-registries
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces: ["security"]
+  parameters:
+    repos:
+      - docker.io/alpine/
+      - docker.io/anchore/
+      - docker.io/aquasec/
+      - docker.io/zricethezav/
+      - docker.io/semgrep/
+      - docker.io/curlimages/
+      - docker.io/library/node
+      - ghcr.io/jqlang/
+      - quay.io/argoproj/

@@ -1,0 +1,46 @@
+{{ include "bootstrap.app" (dict "name" "dependency-track" "wave" 1) }}
+spec:
+  project: default
+  source:
+    repoURL: https://dependencytrack.github.io/helm-charts
+    chart: dependency-track
+    targetRevision: {{ .Values.versions.dependencyTrack | quote }}
+    helm:
+      releaseName: dependency-track
+      valuesObject:
+        apiServer:
+          persistentVolume:
+            enabled: true
+            size: {{ .Values.dependencyTrack.apiServer.storage }}
+          resources:
+            {{- if eq .Values.mode "local" }}
+            requests: { cpu: "250m", memory: "1500Mi" }
+            limits: { memory: "4Gi" }
+            {{- else }}
+            {{- toYaml .Values.dependencyTrack.apiServer.resources | nindent 12 }}
+            {{- end }}
+          extraEnv:
+            # Analyzers that need no API key; OSS Index / Snyk need secrets (add via ESO later)
+            - name: ALPINE_METRICS_ENABLED
+              value: "true"
+            - name: ALPINE_DATA_DIRECTORY
+              value: /data
+        frontend:
+          apiBaseUrl: {{ .Values.dependencyTrack.apiBaseUrl }}
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+        postgresql:
+          enabled: {{ .Values.dependencyTrack.postgresql.enabled }}
+          primary:
+            persistence:
+              size: {{ .Values.dependencyTrack.postgresql.storage }}
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.dependencyTrack.namespace }}
+  {{ include "bootstrap.syncPolicy" . | nindent 2 }}
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers: [/spec/volumeClaimTemplates]

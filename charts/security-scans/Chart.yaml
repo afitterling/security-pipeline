@@ -1,0 +1,5 @@
+apiVersion: v2
+name: security-scans
+description: One scheduled security scan (SBOM + vuln + secrets + SAST → Dependency-Track + S3) per project in projects.yaml
+type: application
+version: 0.1.0

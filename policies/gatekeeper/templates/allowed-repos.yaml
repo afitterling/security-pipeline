@@ -1,0 +1,58 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sallowedrepos
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    description: Images must come from an allowed registry. Bare Docker Hub names are normalised to docker.io/.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sAllowedRepos
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            repos:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sallowedrepos
+
+        is_registry(s) { contains(s, ".") }
+        is_registry(s) { contains(s, ":") }
+        is_registry(s) { s == "localhost" }
+
+        normalize(image) = out {
+          parts := split(image, "/")
+          count(parts) == 1
+          out := concat("/", ["docker.io", "library", image])
+        }
+        normalize(image) = out {
+          parts := split(image, "/")
+          count(parts) > 1
+          not is_registry(parts[0])
+          out := concat("/", ["docker.io", image])
+        }
+        normalize(image) = image {
+          parts := split(image, "/")
+          count(parts) > 1
+          is_registry(parts[0])
+        }
+
+        allowed(img) { startswith(img, input.parameters.repos[_]) }
+
+        input_containers[c] { c := input.review.object.spec.containers[_] }
+        input_containers[c] { c := input.review.object.spec.initContainers[_] }
+        input_containers[c] { c := input.review.object.spec.ephemeralContainers[_] }
+
+        violation[{"msg": msg}] {
+          c := input_containers[_]
+          img := normalize(c.image)
+          not allowed(img)
+          msg := sprintf("container <%v> image <%v> is not from an allowed registry %v", [c.name, c.image, input.parameters.repos])
+        }

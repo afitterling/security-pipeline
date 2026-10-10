@@ -1,0 +1,27 @@
+{{ include "bootstrap.app" (dict "name" "security-scans" "wave" 2) }}
+spec:
+  project: default
+  sources:
+    - repoURL: {{ .Values.repoURL }}
+      targetRevision: {{ .Values.targetRevision }}
+      path: charts/security-scans
+      helm:
+        releaseName: security-scans
+        valueFiles:
+          - $values/projects.yaml
+        valuesObject:
+          mode: {{ .Values.mode }}
+          aws:
+            region: {{ .Values.aws.region }}
+            roles:
+              argoWorkflows: {{ .Values.aws.roles.argoWorkflows }}
+              deployer: {{ .Values.aws.roles.deployer }}
+          dependencyTrack:
+            url: http://dependency-track-api-server.{{ .Values.dependencyTrack.namespace }}.svc.cluster.local:8080
+    - repoURL: {{ .Values.repoURL }}
+      targetRevision: {{ .Values.targetRevision }}
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.argoWorkflows.workflowNamespace }}
+  {{ include "bootstrap.syncPolicy" . | nindent 2 }}

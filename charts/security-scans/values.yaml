@@ -1,0 +1,72 @@
+# Projects come from ../../projects.yaml (Argo CD passes it as a values file).
+projects: []
+
+defaults:
+  ref: main
+  schedule: "0 3 * * *"
+  enabled: true
+  semgrep: true
+  gate:
+    critical: 0     # fail the run when trivy finds more CRITICAL vulns than this
+    high: 10
+  deploy:
+    enabled: true   # run the detected/declared deploy command after the gate passes
+    stage: dev      # SST stage: npx sst deploy --stage <stage>
+  timezone: Europe/Berlin
+  workspaceSize: 10Gi
+
+# aws: IRSA annotations + ExternalSecrets.  local: plain secrets from local/up.sh, ~/.aws mounted for deploy.
+mode: aws
+local:
+  awsCredentialsSecret: aws-credentials   # keys: credentials, config (copied from ~/.aws by local/up.sh)
+
+# Injected by argocd/bootstrap (Terraform outputs); defaults only for `helm lint`.
+aws:
+  region: eu-central-1
+  roles:
+    argoWorkflows: arn:aws:iam::000000000000:role/security-pipeline-argo-workflows
+    deployer: arn:aws:iam::000000000000:role/security-pipeline-deployer
+
+dependencyTrack:
+  url: http://dependency-track-api-server.dependency-track.svc.cluster.local:8080
+
+secrets:
+  # AWS Secrets Manager names (created by Terraform)
+  dtrack: security-pipeline/dependency-track   # {"apiKey": "..."}
+  git: security-pipeline/git                   # {"username": "...", "token": "..."}
+  refreshInterval: 5m
+
+serviceAccount:
+  name: security-scan      # scanners: S3 reports only
+  deploy: security-deploy  # deploy step: assumes the deployer role
+
+# Runtime detection pipe (needs trivy-operator + gatekeeper apps): Trivy Operator SBOMs of every
+# running image → Dependency-Track ("runtime/<image>"), vuln + Gatekeeper audit summaries → bucket.
+runtime:
+  enabled: true
+  schedule: "30 * * * *"
+  gate:
+    critical: ""       # "" = report only; a number fails the run when any image exceeds it
+
+# Fully qualified so the Gatekeeper allowed-registries policy can match them
+images:
+  git: docker.io/alpine/git:2.47.2
+  syft: docker.io/anchore/syft:v1.26.1
+  trivy: docker.io/aquasec/trivy:0.64.1
+  gitleaks: docker.io/zricethezav/gitleaks:v8.27.2
+  semgrep: docker.io/semgrep/semgrep:1.127.1
+  curl: docker.io/curlimages/curl:8.14.1
+  jq: ghcr.io/jqlang/jq:1.8.0
+  runner: docker.io/library/node:22-bookworm   # detect / build / test / deploy (node 22, python3, git)
+  k8s: docker.io/alpine/k8s:1.33.3             # kubectl + jq + curl for the runtime sync
+
+resources:
+  small:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  scanner:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 4Gi }
+  runner:
+    requests: { cpu: "1", memory: 2Gi }
+    limits: { memory: 6Gi }

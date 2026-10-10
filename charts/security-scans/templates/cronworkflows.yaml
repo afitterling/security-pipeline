@@ -1,0 +1,43 @@
+{{- $defaults := .Values.defaults }}
+{{- $names := dict }}
+{{- range .Values.projects }}
+{{- $p := include "scans.project" (dict "defaults" $defaults "project" .) | fromJson }}
+{{- if hasKey $names $p.name }}{{ fail (printf "duplicate project name %q in projects.yaml" $p.name) }}{{ end }}
+{{- $_ := set $names $p.name true }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: scan-{{ $p.name }}
+  labels:
+    app.kubernetes.io/part-of: security-pipeline
+    security-pipeline/project: {{ $p.name | quote }}
+  annotations:
+    security-pipeline/repo: {{ $p.repo | quote }}
+spec:
+  schedule: {{ $p.schedule | quote }}
+  timezone: {{ $defaults.timezone | quote }}
+  concurrencyPolicy: Forbid
+  suspend: {{ not $p.enabled }}
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 10
+  workflowMetadata:
+    labels:
+      security-pipeline/project: {{ $p.name | quote }}
+  workflowSpec:
+    workflowTemplateRef:
+      name: security-scan
+    arguments:
+      parameters:
+        - { name: project, value: {{ $p.name | quote }} }
+        - { name: repo, value: {{ $p.repo | quote }} }
+        - { name: ref, value: {{ $p.ref | quote }} }
+        - { name: version, value: {{ $p.version | quote }} }
+        - { name: semgrep, value: {{ $p.semgrep | quote }} }
+        - { name: gate-critical, value: {{ $p.gate.critical | quote }} }
+        - { name: gate-high, value: {{ $p.gate.high | quote }} }
+        - { name: deploy-enabled, value: {{ $p.deploy.enabled | quote }} }
+        - { name: stage, value: {{ $p.deploy.stage | quote }} }
+        - { name: commands, value: {{ $p.commands | toJson | quote }} }
+{{- end }}

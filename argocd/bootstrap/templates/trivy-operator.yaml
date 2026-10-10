@@ -1,0 +1,44 @@
+{{ include "bootstrap.app" (dict "name" "trivy-operator" "wave" 1) }}
+spec:
+  project: default
+  source:
+    repoURL: https://aquasecurity.github.io/helm-charts/
+    chart: trivy-operator
+    targetRevision: {{ .Values.versions.trivyOperator | quote }}
+    helm:
+      releaseName: trivy-operator
+      valuesObject:
+        # Continuously scans every running image in the cluster and writes
+        # VulnerabilityReport / SbomReport / ConfigAuditReport objects per workload.
+        targetNamespaces: ""            # all namespaces
+        excludeNamespaces: "kube-system,gatekeeper-system"
+        operator:
+          scanJobsConcurrentLimit: 3
+          scanJobTimeout: 10m
+          vulnerabilityScannerEnabled: true
+          sbomGenerationEnabled: true
+          configAuditScannerEnabled: true
+          rbacAssessmentScannerEnabled: true
+          infraAssessmentScannerEnabled: false
+          exposedSecretScannerEnabled: true
+          clusterComplianceEnabled: true
+          vulnerabilityScannerScanOnlyCurrentRevisions: true
+          scannerReportTTL: "48h"
+          metricsVulnIdEnabled: true
+          metricsFindingsEnabled: true
+        trivy:
+          ignoreUnfixed: false
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          timeout: 10m0s
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { memory: 2Gi }
+        resources:
+          requests: { cpu: 100m, memory: 256Mi }
+          limits: { memory: 1Gi }
+        serviceMonitor:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.trivyOperator.namespace }}
+  {{ include "bootstrap.syncPolicy" . | nindent 2 }}

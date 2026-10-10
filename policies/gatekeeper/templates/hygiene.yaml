@@ -1,0 +1,99 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8scontainermemorylimits
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sContainerMemoryLimits
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8scontainermemorylimits
+
+        input_containers[c] { c := input.review.object.spec.containers[_] }
+        input_containers[c] { c := input.review.object.spec.initContainers[_] }
+
+        violation[{"msg": msg}] {
+          c := input_containers[_]
+          not c.resources.limits.memory
+          msg := sprintf("container <%v> has no memory limit", [c.name])
+        }
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdisallowedtags
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDisallowedTags
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            tags:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdisallowedtags
+
+        input_containers[c] { c := input.review.object.spec.containers[_] }
+        input_containers[c] { c := input.review.object.spec.initContainers[_] }
+
+        violation[{"msg": msg}] {
+          c := input_containers[_]
+          not contains(c.image, "@sha256:")
+          tag := split(c.image, ":")
+          count(tag) == 1
+          msg := sprintf("container <%v> image <%v> has no tag (floats to latest)", [c.name, c.image])
+        }
+        violation[{"msg": msg}] {
+          c := input_containers[_]
+          tag := split(c.image, ":")
+          count(tag) > 1
+          t := tag[count(tag) - 1]
+          t == input.parameters.tags[_]
+          msg := sprintf("container <%v> uses disallowed tag <%v>", [c.name, t])
+        }
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredlabels
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredLabels
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            labels:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredlabels
+
+        violation[{"msg": msg}] {
+          provided := {l | input.review.object.metadata.labels[l]}
+          required := {l | l := input.parameters.labels[_]}
+          missing := required - provided
+          count(missing) > 0
+          msg := sprintf("missing required labels: %v", [missing])
+        }

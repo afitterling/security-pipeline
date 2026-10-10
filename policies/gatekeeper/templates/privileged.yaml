@@ -1,0 +1,80 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8spspprivilegedcontainer
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sPSPPrivilegedContainer
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8spspprivileged
+
+        input_containers[c] { c := input.review.object.spec.containers[_] }
+        input_containers[c] { c := input.review.object.spec.initContainers[_] }
+        input_containers[c] { c := input.review.object.spec.ephemeralContainers[_] }
+
+        violation[{"msg": msg}] {
+          c := input_containers[_]
+          c.securityContext.privileged
+          msg := sprintf("privileged container is not allowed: %v", [c.name])
+        }
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8spsphostnamespace
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sPSPHostNamespace
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8spsphostnamespace
+
+        violation[{"msg": msg}] {
+          input.review.object.spec.hostPID
+          msg := "sharing the host PID namespace is not allowed"
+        }
+        violation[{"msg": msg}] {
+          input.review.object.spec.hostIPC
+          msg := "sharing the host IPC namespace is not allowed"
+        }
+        violation[{"msg": msg}] {
+          input.review.object.spec.hostNetwork
+          msg := "hostNetwork is not allowed"
+        }
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8spspallowprivilegeescalationcontainer
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sPSPAllowPrivilegeEscalationContainer
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8spspallowprivilegeescalationcontainer
+
+        input_containers[c] { c := input.review.object.spec.containers[_] }
+        input_containers[c] { c := input.review.object.spec.initContainers[_] }
+        input_containers[c] { c := input.review.object.spec.ephemeralContainers[_] }
+
+        violation[{"msg": msg}] {
+          c := input_containers[_]
+          not c.securityContext.allowPrivilegeEscalation == false
+          msg := sprintf("container <%v> must set securityContext.allowPrivilegeEscalation: false", [c.name])
+        }

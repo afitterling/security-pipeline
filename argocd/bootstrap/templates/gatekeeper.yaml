@@ -1,0 +1,42 @@
+{{ include "bootstrap.app" (dict "name" "gatekeeper" "wave" 0) }}
+spec:
+  project: default
+  source:
+    repoURL: https://open-policy-agent.github.io/gatekeeper/charts
+    chart: gatekeeper
+    targetRevision: {{ .Values.versions.gatekeeper | quote }}
+    helm:
+      releaseName: gatekeeper
+      valuesObject:
+        replicas: 2
+        # Runtime detection: audit every existing resource against all constraints every 60s,
+        # record violations in constraint status and emit events.
+        auditInterval: 60
+        auditFromCache: false
+        auditChunkSize: 500
+        constraintViolationsLimit: 200
+        emitAuditEvents: true
+        emitAdmissionEvents: true
+        logDenies: true
+        logLevel: INFO
+        # Keep the webhook fail-open so a Gatekeeper outage never blocks the cluster.
+        validatingWebhookFailurePolicy: Ignore
+        validatingWebhookTimeoutSeconds: 3
+        mutatingWebhookFailurePolicy: Ignore
+        exemptNamespaces:
+          - kube-system
+          - gatekeeper-system
+        controllerManager:
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+        audit:
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+        psp:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gatekeeper-system
+  {{ include "bootstrap.syncPolicy" . | nindent 2 }}
