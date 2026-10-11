@@ -144,6 +144,13 @@ projects:
     visibility: private
     tags:
       - appleapp
+  - name: sp33c-tech-profile
+    repo: https://github.com/afitterling/sp33c.tech-profile.git
+    ref: main
+    schedule: 50 4 * * *
+    deploy:
+      enabled: false
+    visibility: private
   - name: timewarp-timelogger
     repo: https://github.com/afitterling/timewarp-timelogger.git
     ref: main
