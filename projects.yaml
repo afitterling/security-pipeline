@@ -288,3 +288,24 @@ projects:
     deploy:
       enabled: false
     visibility: public
+  - name: appstore-lens
+    repo: https://github.com/afitterling/appstore-lens.git
+    ref: main
+    schedule: 10 9 * * *
+    deploy:
+      enabled: false
+    appstore:
+      path: swift/project.yml
+      builds:
+        - { scheme: SalesLens, platform: ios }
+        - { scheme: SalesLens, platform: macos }
+    visibility: private
+    tags:
+      - appleapp
+  - name: security-pipeline
+    repo: https://github.com/afitterling/security-pipeline.git
+    ref: main
+    schedule: 20 9 * * *
+    deploy:
+      enabled: false
+    visibility: public
