@@ -12,6 +12,8 @@ scripts/start.sh stop     # or: make stop — stop the forwards (cluster keeps r
 restart (logs: `~/Library/Logs/security-pipeline/forward-*.log`). `make ui-argocd|ui-argo|ui-dtrack`
 still start a single forward in the foreground; those stop when their pod restarts.
 
+Scan data survives a reboot of the Mac; see [data.md](data.md) for where it lives and what deletes it.
+
 | What | URL on your Mac | Start with | Login | In-cluster service |
 |---|---|---|---|---|
 | **Argo CD** (GitOps: syncs this repo) | http://localhost:8443 | `make start` or `make ui-argocd` | `admin` / `make argocd-password` | `argocd-server.argocd:80` |
