@@ -37,6 +37,7 @@ spec:
         - { name: semgrep, value: {{ $p.semgrep | quote }} }
         - { name: gate-critical, value: {{ $p.gate.critical | quote }} }
         - { name: gate-high, value: {{ $p.gate.high | quote }} }
+        - { name: gate-epss, value: {{ $p.gate.epss | quote }} }
         - { name: gate-policy, value: {{ $p.gate.policy | quote }} }
         - { name: testflight, value: {{ $p.testflight | quote }} }
         - { name: tags, value: {{ join "," $p.tags | quote }} }

@@ -8,7 +8,8 @@ defaults:
   semgrep: true
   gate:
     critical: 0     # fail the run when trivy finds more CRITICAL vulns than this
-    high: 10
+    high: ""        # same for HIGH; "" = report only (EPSS decides instead)
+    epss: 0.1       # fail when any Dependency-Track finding has EPSS >= this (fails closed without EPSS data); "" = off
     policy: block   # Dependency-Track policy violations: block (FAIL state blocks) | report | off
   deploy:
     enabled: true   # run the detected/declared deploy command after the gate passes

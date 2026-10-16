@@ -19,8 +19,10 @@ spec:
         value: "true"
       - name: gate-critical
         value: "0"
-      - name: gate-high
-        value: "10"
+      - name: gate-high         # "" = report only
+        value: ""
+      - name: gate-epss         # block when any finding has EPSS >= this; "" = off
+        value: "0.1"
       - name: gate-policy       # block | report | off  (Dependency-Track policy violations)
         value: block
       - name: testflight        # "true" (tag appleapp + appstore: block) → gate-passed run = TestFlight candidate
@@ -303,7 +305,9 @@ spec:
             out=/work/out
             pol=$out/dtrack-policy.json
             api() { curl -sS --fail-with-body -H "X-Api-Key: $DTRACK_API_KEY" "$@"; }
-            bail() { jq -n --arg e "$1" '{error:$e, fail:0, warn:0, info:0, approved:0, violations:[]}' > $pol; echo "dtrack-policy: $1"; exit 0; }
+            bail() { jq -n --arg e "$1" '{error:$e, fail:0, warn:0, info:0, approved:0, violations:[]}' > $pol
+                     [ -s $out/epss.json ] || jq -n --arg e "$1" '{error:$e, max:0, high:0, top:[]}' > $out/epss.json
+                     echo "dtrack-policy: $1"; exit 0; }
             token=$(jq -r '.token // empty' $out/dtrack-upload.json 2>/dev/null || true)
             [ -n "$token" ] || bail "no upload token"
             waited=0
@@ -342,6 +346,21 @@ spec:
                   && echo "tags: $(jq -r '[.tags[].name] | join(",")' /tmp/tags.json)" || echo "WARNING: could not set tags"
               fi
             fi
+            # EPSS: probability of exploitation in the next 30 days (FIRST.org), per finding. Collected
+            # before the policy check so it also works with gate.policy off; an error makes the EPSS gate fail closed.
+            min=${EPSS_MIN:-0.1}
+            api "$DTRACK_URL/api/v1/finding/project/$uuid?suppressed=false" > /tmp/f.json \
+              && jq --argjson min "$min" '
+              { threshold: $min, findings: length,
+                unscored: [.[] | select(.vulnerability.epssScore == null)] | length,
+                max: ([.[].vulnerability.epssScore // 0] | max // 0),
+                high: [.[] | select((.vulnerability.epssScore // 0) >= $min)] | length,
+                top: (sort_by(-(.vulnerability.epssScore // 0)) | .[:20] | map({
+                  vuln: .vulnerability.vulnId, component: "\(.component.name)@\(.component.version // "")",
+                  severity: .vulnerability.severity, epss: .vulnerability.epssScore,
+                  percentile: .vulnerability.epssPercentile })) }' /tmp/f.json > $out/epss.json \
+              || jq -n '{error:"finding query failed", max:0, high:0, top:[]}' > $out/epss.json
+            jq -r '.error // "EPSS max \(.max)  findings with EPSS >= \(.threshold): \(.high)  (\(.unscored)/\(.findings) without EPSS)"' $out/epss.json
             [ -n "$GATE_POLICY" ] && [ "$GATE_POLICY" != off ] || bail "policy gate off"
             page=1; : > /tmp/v.jsonl
             while :; do
@@ -361,15 +380,6 @@ spec:
                                      analysis: (.analysis.analysisState // "NOT_SET") }] }' /tmp/v.jsonl > $pol
             jq -c '{fail, warn, info, approved}' $pol
             jq -r '.violations[] | select(.state == "FAIL" and .analysis != "APPROVED") | "  FAIL \(.policy): \(.component)"' $pol | head -30
-            # EPSS: probability of exploitation in the next 30 days (FIRST.org), per finding
-            api "$DTRACK_URL/api/v1/finding/project/$uuid?suppressed=false" | jq '
-              { max: ([.[].vulnerability.epssScore // 0] | max // 0),
-                high: [.[] | select((.vulnerability.epssScore // 0) >= 0.1)] | length,
-                top: (sort_by(-(.vulnerability.epssScore // 0)) | .[:20] | map({
-                  vuln: .vulnerability.vulnId, component: "\(.component.name)@\(.component.version // "")",
-                  severity: .vulnerability.severity, epss: .vulnerability.epssScore,
-                  percentile: .vulnerability.epssPercentile })) }' > $out/epss.json || echo '{"max":0,"high":0,"top":[]}' > $out/epss.json
-            jq -r '"EPSS max \(.max)  findings with EPSS >= 0.1: \(.high)"' $out/epss.json
         env:
           - { name: DTRACK_URL, value: {{ .Values.dependencyTrack.url | quote }} }
           - name: DTRACK_API_KEY
@@ -379,6 +389,7 @@ spec:
           - { name: GATE_POLICY, value: "{{ "{{" }}workflow.parameters.gate-policy{{ "}}" }}" }
           - { name: TAGS, value: "{{ "{{" }}workflow.parameters.tags{{ "}}" }}" }
           - { name: TIMEOUT, value: {{ .Values.dependencyTrack.analysisTimeoutSeconds | quote }} }
+          - { name: EPSS_MIN, value: "{{ "{{" }}workflow.parameters.gate-epss{{ "}}" }}" }
         volumeMounts: [{ name: work, mountPath: /work }]
         resources: {{ toYaml .Values.resources.small | nindent 10 }}
       activeDeadlineSeconds: 1200
@@ -401,20 +412,31 @@ spec:
             perr=$(jq -r '.error // empty' $pol 2>/dev/null || echo "no dtrack-policy.json")
             emax=$(jq '.max // 0' /work/out/epss.json 2>/dev/null || echo 0)
             ehigh=$(jq '.high // 0' /work/out/epss.json 2>/dev/null || echo 0)
+            eerr=$(jq -r '.error // empty' /work/out/epss.json 2>/dev/null || echo "no epss.json")
             gpol="{{ "{{" }}workflow.parameters.gate-policy{{ "}}" }}"
+            ghigh="{{ "{{" }}workflow.parameters.gate-high{{ "}}" }}"
+            gepss="{{ "{{" }}workflow.parameters.gate-epss{{ "}}" }}"
             jq -n --arg project "{{ "{{" }}workflow.parameters.project{{ "}}" }}" \
                   --arg commit "$(cat /work/out/commit.txt)" \
                   --arg kind "$(jq -r .kind /work/out/plan.json)" \
                   --argjson critical "$crit" --argjson high "$high" \
                   --argjson trivySecrets "$secrets" --argjson gitleaks "$leaks" --argjson semgrep "$sg" \
                   --argjson policyFail "$pfail" --argjson policyWarn "$pwarn" --arg policyError "$perr" --arg policyGate "$gpol" \
-                  --argjson epssMax "$emax" --argjson epssHigh "$ehigh" \
+                  --argjson epssMax "$emax" --argjson epssHigh "$ehigh" --arg epssGate "$gepss" --arg epssError "$eerr" \
                   '{project:$project, commit:$commit, kind:$kind, critical:$critical, high:$high, trivySecrets:$trivySecrets, gitleaks:$gitleaks, semgrep:$semgrep,
-                    policyGate:$policyGate, policyFail:$policyFail, policyWarn:$policyWarn, policyError:$policyError, epssMax:$epssMax, epssHigh:$epssHigh}' \
+                    policyGate:$policyGate, policyFail:$policyFail, policyWarn:$policyWarn, policyError:$policyError,
+                    epssGate:$epssGate, epssMax:$epssMax, epssHigh:$epssHigh, epssError:$epssError}' \
                   | tee /work/out/summary.json
             fail=0
             [ "$crit" -gt "{{ "{{" }}workflow.parameters.gate-critical{{ "}}" }}" ] && { echo "GATE: critical $crit > {{ "{{" }}workflow.parameters.gate-critical{{ "}}" }}"; fail=1; }
-            [ "$high" -gt "{{ "{{" }}workflow.parameters.gate-high{{ "}}" }}" ] && { echo "GATE: high $high > {{ "{{" }}workflow.parameters.gate-high{{ "}}" }}"; fail=1; }
+            [ -n "$ghigh" ] && [ "$high" -gt "$ghigh" ] && { echo "GATE: high $high > $ghigh"; fail=1; }
+            if [ -n "$gepss" ]; then
+              [ -n "$eerr" ] && { echo "GATE: no EPSS data, failing closed: $eerr"; fail=1; }
+              if [ "$ehigh" -gt 0 ]; then
+                echo "GATE: $ehigh findings with EPSS >= $gepss (likely exploited)"; fail=1
+                jq -r --argjson min "$gepss" '.top[] | select((.epss // 0) >= $min) | "  EPSS \(.epss)  \(.vuln)  \(.component)  \(.severity)"' /work/out/epss.json
+              fi
+            fi
             [ "$leaks" -gt 0 ] && { echo "GATE: $leaks leaked secrets (gitleaks)"; fail=1; }
             if [ "$gpol" = block ]; then
               [ -n "$perr" ] && { echo "GATE: Dependency-Track policy check failed closed: $perr"; fail=1; }

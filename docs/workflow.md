@@ -27,7 +27,7 @@ flowchart TD
     end
 
     subgraph gatebox["Gate"]
-        gate{"gate<br/><b>jq</b> over trivy, gitleaks, semgrep, dtrack-policy, epss<br/>→ summary.json<br/>fail if critical &gt; gate-critical, high &gt; gate-high,<br/>any gitleaks hit or a FAIL policy violation (gate-policy=block)<br/><i>alpine/k8s</i>"}
+        gate{"gate<br/><b>jq</b> over trivy, gitleaks, semgrep, dtrack-policy, epss<br/>→ summary.json<br/>fail if any EPSS &gt;= gate-epss (or no EPSS data),<br/>critical &gt; gate-critical, high &gt; gate-high (if set),<br/>any gitleaks hit or a FAIL policy violation (gate-policy=block)<br/><i>alpine/k8s</i>"}
     end
 
     subgraph deploybox["Deploy — ServiceAccount security-deploy"]

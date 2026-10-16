@@ -33,7 +33,8 @@ IAM role (iam.tf). Scanners use `security-scan` → S3-only role. Keep that spli
   `release.sh`, `dtrack-tags.sh`, `start.sh` (VM + node + all UI forwards, self-healing), `ui.sh`. Ports/logins: `docs/access.md`, data persistence: `docs/data.md` (Argo CD 8443, Argo
   Workflows 2746, Dependency-Track 8080 UI + 8081 API). D-Track projects are tagged public/private
   from `visibility:` in `projects.yaml`.
-- Gate = trivy counts + gitleaks + Dependency-Track policy violations (`dtrack-policy` task, FAIL
+- Gate = EPSS (any finding >= `gate.epss`, default 0.1, fails closed without data) + trivy critical
+  count (high report-only by default) + gitleaks + Dependency-Track policy violations (`dtrack-policy` task, FAIL
   blocks unless approved in D-Track; starter set in `policies/dependency-track/policies.json`).
 - TestFlight (local mode): tag `appleapp` (repos with Swift) + `appstore:` block in `projects.yaml` →
   `release-candidate-<name>` ConfigMap (SA `security-release`, never the scanner SA) →

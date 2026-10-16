@@ -22,11 +22,14 @@ projects.yaml ──git push──▶ Argo CD ──▶ one CronWorkflow per rep
 - **Detection**: the pipeline inspects each repo. `sst.config.ts` → `npm ci` + `npx sst deploy
   --stage <stage>`; plain `package.json` → build/test only; Python, Terraform, Swift (scan-only).
   Override with `commands:` in `projects.yaml` or `.security-pipeline.json` in the repo.
-- **Gate before deploy**: deploy runs only if trivy CRITICAL/HIGH counts are within the
-  project's `gate`, gitleaks found nothing, and Dependency-Track reports no policy violation in
-  state FAIL (`gate.policy: block`; approve or suppress a violation in the D-Track UI to let it pass).
-- **EPSS**: every run stores the top findings by exploit probability (`epss.json`, `epssMax` in
-  `summary.json`); `scripts/status.sh` lists max EPSS per project.
+- **Gate before deploy**: deploy runs only if no finding has EPSS >= `gate.epss` (default 0.1),
+  trivy CRITICAL count is within the project's `gate` (HIGH is report-only unless `gate.high` is set),
+  gitleaks found nothing, and Dependency-Track reports no policy violation in state FAIL
+  (`gate.policy: block`; approve or suppress a violation in the D-Track UI to let it pass).
+- **EPSS** (exploit probability, FIRST.org) is the main signal: every run stores the top findings
+  (`epss.json`, `epssMax`/`epssHigh` in `summary.json`); the gate fails closed when Dependency-Track
+  returns no EPSS data. Suppress a finding in D-Track (Audit Vulnerabilities) to let it pass.
+  `scripts/status.sh` lists max EPSS per project.
 - **TestFlight**: repos with Swift are tagged `appleapp`. With an `appstore:` block (Xcode project +
   schemes) a gate-passed scan becomes a TestFlight candidate; the `upload-to-testflight` workflow
   (`scripts/release.sh <name>`) builds and uploads it on your Mac (local mode).

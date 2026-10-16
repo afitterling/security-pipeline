@@ -19,7 +19,9 @@
 #   version   Dependency-Track project version             default: <ref>
 #   schedule  cron (Europe/Berlin)                         default: daily 03:00, staggered
 #   enabled   false keeps the entry but suspends the cron  default: true
-#   gate      { critical: N, high: N }  fail (and block deploy) when exceeded
+#   gate      { critical: N, high: N, epss: P }  fail (and block deploy) when exceeded
+#             default: critical 0, high "" (report only), epss 0.1 = any finding with EPSS >= 10%
+#             blocks; no EPSS data (D-Track down) fails closed. Suppress a finding in D-Track to pass
 #   semgrep   run semgrep (slower)                         default: true
 #   deploy    { enabled: bool, stage: <sst stage> }        default: enabled, stage dev
 #   commands  { install, build, test, deploy }  explicit commands, override detection
